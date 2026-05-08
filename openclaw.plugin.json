@@ -1,0 +1,36 @@
+{
+  "$schema": "https://openclaw.ai/schemas/plugin.json",
+  "id": "clawguard",
+  "name": "ClawGuard",
+  "version": "0.1.0",
+  "description": "Runtime tool call interception with command-level allow/deny/approve rules, bypass detection, file/network path rules, and audit logging",
+  "author": "VictorQR",
+  "license": "MIT",
+  "entry": "dist/index.js",
+  "contracts": {
+    "tools": {
+      "clawguard.status": {
+        "description": "Get ClawGuard plugin status and current mode",
+        "parameters": {}
+      },
+      "clawguard.config": {
+        "description": "View or reload ClawGuard configuration",
+        "parameters": {
+          "action": {
+            "type": "string",
+            "enum": ["view", "reload"],
+            "description": "Action: view current config or reload policy file"
+          }
+        }
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "dependencies": {
+    "node": ">=22"
+  },
+  "repository": "https://github.com/VictorQR/clawguard",
+  "keywords": ["security", "interception", "audit", "clawguard"]
+}

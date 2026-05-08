@@ -1,0 +1,41 @@
+{
+  "name": "@victorqr/clawguard",
+  "version": "0.1.0",
+  "description": "OpenClaw security plugin — runtime tool call interception, command-level allow/deny/approve, bypass detection, file/network path rules, and audit logging",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "rules/",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npx tsx tests/rules.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "security",
+    "clawguard",
+    "tool-interception",
+    "audit-logging"
+  ],
+  "author": "VictorQR",
+  "license": "MIT",
+  "dependencies": {
+    "minimatch": "^9.0.5"
+  },
+  "devDependencies": {
+    "@types/minimatch": "^5.1.2",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

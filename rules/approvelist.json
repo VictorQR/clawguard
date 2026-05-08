@@ -1,0 +1,152 @@
+[
+  {
+    "pattern": "^sudo\\s",
+    "action": "approve",
+    "reason": "🔶 提权操作需要审批"
+  },
+  {
+    "pattern": "^chmod\\s",
+    "action": "approve",
+    "reason": "🔶 权限修改需要审批"
+  },
+  {
+    "pattern": "^chown\\s",
+    "action": "approve",
+    "reason": "🔶 所有者变更需要审批"
+  },
+  {
+    "pattern": "^rm\\s",
+    "action": "approve",
+    "reason": "🔶 删除操作需审批——请使用 gio trash"
+  },
+  {
+    "pattern": "^mv\\s",
+    "action": "approve",
+    "reason": "🔶 文件移动需审批"
+  },
+  {
+    "pattern": "^cp\\s",
+    "action": "approve",
+    "reason": "🔶 文件复制需审批"
+  },
+  {
+    "pattern": "curl\\s+-X\\s+(?:POST|PUT|DELETE|PATCH)",
+    "action": "approve",
+    "reason": "🔶 HTTP 写入操作需审批"
+  },
+  {
+    "pattern": "wget\\s+--method=(?:POST|PUT|DELETE|PATCH)",
+    "action": "approve",
+    "reason": "🔶 HTTP 写入操作需审批"
+  },
+  {
+    "pattern": "^pip\\s+install",
+    "action": "approve",
+    "reason": "🔶 Python 包安装需审批"
+  },
+  {
+    "pattern": "^pip3\\s+install",
+    "action": "approve",
+    "reason": "🔶 Python 包安装需审批"
+  },
+  {
+    "pattern": "^npm\\s+install",
+    "action": "approve",
+    "reason": "🔶 Node.js 包安装需审批"
+  },
+  {
+    "pattern": "^npm\\s+i\\s",
+    "action": "approve",
+    "reason": "🔶 Node.js 包安装需审批"
+  },
+  {
+    "pattern": "^apt-get\\s+install",
+    "action": "approve",
+    "reason": "🔶 系统包安装需审批"
+  },
+  {
+    "pattern": "^apt\\s+install",
+    "action": "approve",
+    "reason": "🔶 系统包安装需审批"
+  },
+  {
+    "pattern": "^docker\\s+run",
+    "action": "approve",
+    "reason": "🔶 容器运行需审批"
+  },
+  {
+    "pattern": "^docker\\s+build",
+    "action": "approve",
+    "reason": "🔶 容器构建需审批"
+  },
+  {
+    "pattern": "^kubectl\\s+apply",
+    "action": "approve",
+    "reason": "🔶 K8s 部署需审批"
+  },
+  {
+    "pattern": "^git\\s+push",
+    "action": "approve",
+    "reason": "🔶 Git 推送需审批"
+  },
+  {
+    "pattern": "^git\\s+commit",
+    "action": "approve",
+    "reason": "🔶 Git 提交需审批"
+  },
+  {
+    "pattern": "^git\\s+reset\\s+--hard",
+    "action": "approve",
+    "reason": "🔶 Git 硬重置需审批"
+  },
+  {
+    "pattern": "^git\\s+reset\\s+--soft",
+    "action": "approve",
+    "reason": "🔶 Git 软重置需审批"
+  },
+  {
+    "pattern": "^ssh\\s+\\S+@\\S+",
+    "action": "approve",
+    "reason": "🔶 SSH 远程连接需审批"
+  },
+  {
+    "pattern": "^scp\\s",
+    "action": "approve",
+    "reason": "🔶 安全复制需审批"
+  },
+  {
+    "pattern": "^rsync\\s",
+    "action": "approve",
+    "reason": "🔶 远程同步需审批"
+  },
+  {
+    "pattern": "^systemctl\\s+(?:start|stop|restart|enable|disable|mask)\\s",
+    "action": "approve",
+    "reason": "🔶 系统服务管理需审批"
+  },
+  {
+    "pattern": "^crontab\\s+-e",
+    "action": "approve",
+    "reason": "🔶 编辑定时任务需审批"
+  },
+  {
+    "pattern": "^tar\\s+-x",
+    "action": "approve",
+    "reason": "🔶 归档解压需审批"
+  },
+  {
+    "pattern": "^unzip\\s(?!-l)",
+    "action": "approve",
+    "reason": "🔶 zip 解压需审批"
+  },
+  {
+    "pattern": "^gunzip\\s",
+    "action": "approve",
+    "reason": "🔶 压缩文件解压需审批"
+  },
+  {
+    "pattern": "^ln\\s+-s\\s",
+    "action": "approve",
+    "reason": "🔶 符号链接创建需审批"
+  }
+]

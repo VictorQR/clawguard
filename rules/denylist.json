@@ -1,0 +1,152 @@
+[
+  {
+    "pattern": "rm\\s+-rf\\s+/",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 递归删除系统根目录"
+  },
+  {
+    "pattern": "rm\\s+-rf\\s+~",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 递归删除用户主目录"
+  },
+  {
+    "pattern": "rm\\s+-rf\\s+\\$HOME",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 递归删除用户主目录"
+  },
+  {
+    "pattern": "rm\\s+-rf\\s+\\*",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 递归删除当前目录所有文件"
+  },
+  {
+    "pattern": "rm\\s+-rf\\s+\\.\\.?\\/?\\*?",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 危险的递归删除操作"
+  },
+  {
+    "pattern": "mkfs|fdisk|parted",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 磁盘格式化/分区操作"
+  },
+  {
+    "pattern": "dd\\s+(if=|of=)/dev/",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 直接写入块设备"
+  },
+  {
+    "pattern": ":\\(\\)\\s*\\{\\s*:\\|:&\\s*\\}\\s*;\\s*:",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: Fork Bomb — 资源耗尽攻击"
+  },
+  {
+    "pattern": "curl.*\\|.*(?:bash|sh|python|perl|node)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: curl 管道执行——远程代码执行"
+  },
+  {
+    "pattern": "wget.*-O\\s*-.*\\|.*(?:bash|sh)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: wget 管道执行——远程代码执行"
+  },
+  {
+    "pattern": "wget.*\\|.*(?:bash|sh|python|perl)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: wget 管道执行——远程代码执行"
+  },
+  {
+    "pattern": "bash\\s+-i\\s+>&\\s+/dev/tcp",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 反弹 Shell 尝试"
+  },
+  {
+    "pattern": "nc\\s+-e\\s+/bin/(?:bash|sh)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: netcat 反弹 Shell"
+  },
+  {
+    "pattern": "nc\\s+-[lL].*-[eE]\\s+/bin/(?:bash|sh)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: netcat 绑定 Shell"
+  },
+  {
+    "pattern": "cat\\s+/etc/shadow",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 读取系统密码文件 /etc/shadow"
+  },
+  {
+    "pattern": "cat\\s+/etc/passwd",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 读取系统用户文件 /etc/passwd"
+  },
+  {
+    "pattern": "reboot|shutdown|halt|poweroff|init\\s+[06]",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 未经授权的系统重启/关机"
+  },
+  {
+    "pattern": "find.*-name.*password|grep\\s+-r.*password",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 凭据枚举扫描"
+  },
+  {
+    "pattern": "docker\\s+run\\s+--privileged",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 特权容器——容器逃逸风险"
+  },
+  {
+    "pattern": "docker.*-v\\s+/:/host",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 挂载根文件系统——容器逃逸"
+  },
+  {
+    "pattern": "echo\\s+.*>>\\s+/etc/(?:crontab|rc\\.local)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 持久化后门——定时任务注入"
+  },
+  {
+    "pattern": "crontab\\s+-r",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 删除所有定时任务——可能的破坏操作"
+  },
+  {
+    "pattern": "base64.*-d.*\\|.*(?:sh|bash|python|perl)",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: base64 解码管道执行——编码绕过"
+  },
+  {
+    "pattern": "\\beval\\s*\\(|eval\\s*\\$\\(|eval\\s*`",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: eval 动态代码执行——编码绕过"
+  },
+  {
+    "pattern": "dig\\s+.*@|nslookup.*\\|.*sh|host\\s+.*\\|.*sh",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: DNS 数据外发"
+  },
+  {
+    "pattern": "nc\\s+.*<\\s+|socat.*FILE:",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 网络文件外发"
+  },
+  {
+    "pattern": "cp\\s+/etc/|tar.*/etc/|tee\\s+/etc/",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 间接读写系统配置目录 /etc/"
+  },
+  {
+    "pattern": "PATH=\\s*\\S+\\s+|PYTHONPATH=\\s*\\S+\\s+|LD_PRELOAD=\\s*\\S+",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 环境变量注入攻击"
+  },
+  {
+    "pattern": "chmod\\s+[0-7]*7[0-7]*7\\s+/",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 设置系统文件为全局可写"
+  },
+  {
+    "pattern": "chown\\s+-R\\s+\\S+\\s+/",
+    "action": "deny",
+    "reason": "🚫 CRITICAL: 递归修改系统文件所有者"
+  }
+]

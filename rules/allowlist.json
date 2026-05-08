@@ -1,0 +1,227 @@
+[
+  {
+    "pattern": "^ls(\\s|$)",
+    "action": "allow",
+    "reason": "✅ 只读文件列表"
+  },
+  {
+    "pattern": "^cat\\s+(?!\\/etc\\/(?:shadow|passwd))",
+    "action": "allow",
+    "reason": "✅ 只读文件查看（非系统敏感文件）"
+  },
+  {
+    "pattern": "^head\\s",
+    "action": "allow",
+    "reason": "✅ 只读文件头"
+  },
+  {
+    "pattern": "^tail\\s",
+    "action": "allow",
+    "reason": "✅ 只读文件尾"
+  },
+  {
+    "pattern": "^which\\s",
+    "action": "allow",
+    "reason": "✅ 查找命令路径"
+  },
+  {
+    "pattern": "^pwd$",
+    "action": "allow",
+    "reason": "✅ 打印工作目录"
+  },
+  {
+    "pattern": "^whoami$",
+    "action": "allow",
+    "reason": "✅ 当前用户"
+  },
+  {
+    "pattern": "^git\\s+status",
+    "action": "allow",
+    "reason": "✅ Git 只读——查看状态"
+  },
+  {
+    "pattern": "^git\\s+log",
+    "action": "allow",
+    "reason": "✅ Git 只读——查看日志"
+  },
+  {
+    "pattern": "^git\\s+diff",
+    "action": "allow",
+    "reason": "✅ Git 只读——查看差异"
+  },
+  {
+    "pattern": "^git\\s+branch",
+    "action": "allow",
+    "reason": "✅ Git 只读——查看分支"
+  },
+  {
+    "pattern": "^pip\\s+(?:list|show|freeze)",
+    "action": "allow",
+    "reason": "✅ pip 只读——查看包"
+  },
+  {
+    "pattern": "^npm\\s+list",
+    "action": "allow",
+    "reason": "✅ npm 只读——查看包"
+  },
+  {
+    "pattern": "^cd\\s",
+    "action": "allow",
+    "reason": "✅ 切换目录"
+  },
+  {
+    "pattern": "^find\\s+.*-type\\s+f\\s+-name\\s",
+    "action": "allow",
+    "reason": "✅ 文件搜索（只读）"
+  },
+  {
+    "pattern": "^grep\\s+-r",
+    "action": "allow",
+    "reason": "✅ 递归文本搜索（只读）"
+  },
+  {
+    "pattern": "^gio\\s+trash\\s",
+    "action": "allow",
+    "reason": "✅ 系统回收站——rm 的安全替代"
+  },
+  {
+    "pattern": "^mkdir\\s+-p\\s+",
+    "action": "allow",
+    "reason": "✅ 创建目录"
+  },
+  {
+    "pattern": "^python3\\s+\\S+\\.py",
+    "action": "allow",
+    "reason": "✅ 运行 Python 脚本"
+  },
+  {
+    "pattern": "^node\\s+\\S+\\.(?:js|mjs|cjs)",
+    "action": "allow",
+    "reason": "✅ 运行 Node.js 脚本"
+  },
+  {
+    "pattern": "^tar\\s+-tzf",
+    "action": "allow",
+    "reason": "✅ 只读归档列表"
+  },
+  {
+    "pattern": "^unzip\\s+-l",
+    "action": "allow",
+    "reason": "✅ 只读 zip 列表"
+  },
+  {
+    "pattern": "^echo\\s",
+    "action": "allow",
+    "reason": "✅ 打印输出"
+  },
+  {
+    "pattern": "^date$",
+    "action": "allow",
+    "reason": "✅ 查看日期"
+  },
+  {
+    "pattern": "^env$",
+    "action": "allow",
+    "reason": "✅ 查看环境变量"
+  },
+  {
+    "pattern": "^df\\s",
+    "action": "allow",
+    "reason": "✅ 磁盘使用情况"
+  },
+  {
+    "pattern": "^du\\s",
+    "action": "allow",
+    "reason": "✅ 目录大小"
+  },
+  {
+    "pattern": "^ps\\s",
+    "action": "allow",
+    "reason": "✅ 进程列表"
+  },
+  {
+    "pattern": "^top\\s",
+    "action": "allow",
+    "reason": "✅ 进程监控"
+  },
+  {
+    "pattern": "^uname\\s",
+    "action": "allow",
+    "reason": "✅ 系统信息"
+  },
+  {
+    "pattern": "^free\\s",
+    "action": "allow",
+    "reason": "✅ 内存使用"
+  },
+  {
+    "pattern": "^wc\\s",
+    "action": "allow",
+    "reason": "✅ 计数工具"
+  },
+  {
+    "pattern": "^sort\\s",
+    "action": "allow",
+    "reason": "✅ 排序工具"
+  },
+  {
+    "pattern": "^uniq\\s",
+    "action": "allow",
+    "reason": "✅ 去重工具"
+  },
+  {
+    "pattern": "^cut\\s",
+    "action": "allow",
+    "reason": "✅ 文本切割"
+  },
+  {
+    "pattern": "^sed\\s",
+    "action": "allow",
+    "reason": "✅ 流编辑器"
+  },
+  {
+    "pattern": "^awk\\s",
+    "action": "allow",
+    "reason": "✅ 文本处理"
+  },
+  {
+    "pattern": "^tr\\s",
+    "action": "allow",
+    "reason": "✅ 字符替换"
+  },
+  {
+    "pattern": "^diff\\s",
+    "action": "allow",
+    "reason": "✅ 文件对比"
+  },
+  {
+    "pattern": "^file\\s",
+    "action": "allow",
+    "reason": "✅ 文件类型检测"
+  },
+  {
+    "pattern": "^stat\\s",
+    "action": "allow",
+    "reason": "✅ 文件状态"
+  },
+  {
+    "pattern": "^realpath\\s",
+    "action": "allow",
+    "reason": "✅ 解析路径"
+  },
+  {
+    "pattern": "^readlink\\s",
+    "action": "allow",
+    "reason": "✅ 读取符号链接"
+  },
+  {
+    "pattern": "^npx\\s+tsx\\s+\\S+\\.test\\.",
+    "action": "allow",
+    "reason": "✅ 运行测试"
+  },
+  {
+    "pattern": "^npx\\s+tsx\\s+",
+    "action": "allow",
+    "reason": "✅ 运行 TypeScript"
+  }
+]
