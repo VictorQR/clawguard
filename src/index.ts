@@ -18,6 +18,8 @@ import { checkFileWrite, checkFileRead } from "./file-rules.js";
 import { checkDomain } from "./network-rules.js";
 import { PolicyEngine } from "./policy.js";
 import { AuditLogger } from "./audit.js";
+import { RateLimiter } from "./rateLimiter.js";
+import { StatsCollector } from "./session-stats.js";
 import type {
   BeforeToolCallResult,
   ClawGuardSession,
@@ -32,6 +34,45 @@ const auditLog = new AuditLogger();
 // Session tracking (maps sessionId → stats)
 const sessionCache = new Map<string, ClawGuardSession>();
 let currentSessionId = "unknown";
+
+// Per-session approval memory: sessionKey → Set<"category:value">
+// e.g. "exec:git push", "file:/tmp/test.txt", "net:api.github.com"
+const sessionApprovals = new Map<string, Set<string>>();
+
+// Rate limiter for burst protection and escalation
+const rateLimiter = new RateLimiter();
+
+// Stats collector for session reports
+const stats = new StatsCollector();
+
+// ── Channel Detection ────────────────────────────────────────
+
+type ChannelType = "direct" | "group" | "cron" | "terminal" | "unknown";
+
+/** Parse channel type from ctx.sessionKey */
+function parseChannelType(sessionKey: string): ChannelType {
+  // Format: agent:main:<provider>:<chatType>:<id>
+  // e.g.   agent:main:qqbot:direct:0a39...
+  const parts = sessionKey.split(":");
+  if (parts.length >= 4) {
+    const chatType = parts[3];
+    if (chatType === "direct" || chatType === "group" || chatType === "cron") {
+      return chatType as ChannelType;
+    }
+  }
+  if (sessionKey.includes("terminal")) return "terminal";
+  if (sessionKey.includes("cron")) return "cron";
+  return "unknown";
+}
+
+/** Channel-based default mode (overrides policy.ini mode) */
+const CHANNEL_MODE_OVERRIDE: Record<ChannelType, string | null> = {
+  direct: null,       // Use policy.ini mode
+  group: "enforce",   // Strict in groups
+  cron: "permissive", // Auto-allow for cron (full audit)
+  terminal: null,     // Use policy.ini mode
+  unknown: "enforce", // Strict for unknown channels
+};
 
 // ── Tool Dispatch Tables ─────────────────────────────────────
 
@@ -81,7 +122,76 @@ function initPlugin(api: any): void {
 
   api.on(
     "before_tool_call",
-    async (event: any, _ctx: any) => {
+    async (event: any, ctx: any) => {
+      // Update session tracking from hook context
+      if (ctx?.sessionKey) {
+        currentSessionId = ctx.sessionKey;
+      }
+
+      // ── Channel-aware policy ──────────────────────────
+      const channelType = parseChannelType(currentSessionId);
+      const effectiveMode = CHANNEL_MODE_OVERRIDE[channelType] || policyEngine.mode;
+
+      // Group channels: enforce mode (only allowlist)
+      if (channelType === "group") {
+        if (EXEC_TOOLS.has(event.toolName)) {
+          const { command } = extractCommand(event.params);
+          if (command) {
+            const ruleResult = checkCommand(command);
+            if (ruleResult.action !== "allow") {
+              logDecision("DENY", command, "群聊通道仅允许白名单命令");
+              return { block: true, blockReason: "🔒 群聊通道安全策略：仅允许白名单命令" };
+            }
+          }
+        }
+        // Allow other tool types (read, etc.) in groups
+      }
+
+      // Cron channels: permissive mode (auto-allow, full audit)
+      if (channelType === "cron") {
+        if (EXEC_TOOLS.has(event.toolName)) {
+          const { command } = extractCommand(event.params);
+          if (command) {
+            logDecision("ALLOW", command, `cron 通道自动放行 (模式:${effectiveMode})`);
+          }
+          rateLimiter.recordExec(currentSessionId);
+        }
+        return; // Auto-allow all in cron
+      }
+
+      // ── Rate limiting & escalation (exec tools only) ────
+      if (EXEC_TOOLS.has(event.toolName)) {
+        // Escalated session → enforce mode override
+        if (rateLimiter.isEscalated(currentSessionId)) {
+          logDecision("DENY", "[escalated]", "会话已升级为 enforce 模式");
+          rateLimiter.recordDeny(currentSessionId);
+          return { block: true, blockReason: "🔴 该会话已因连续拒绝操作自动升级为 enforce 模式。如需重置，请开启新会话。" };
+        }
+
+        // Rate limit check (burst / global cap)
+        const rateCheck = rateLimiter.checkExecRate(currentSessionId);
+        if (!rateCheck.allowed) {
+          console.warn(`[ClawGuard] ⚡ ${rateCheck.reason}`);
+          if (rateCheck.escalated) {
+            auditLog.append({
+              timestamp: new Date().toISOString(),
+              toolName: event.toolName,
+              params: JSON.stringify(event.params),
+              result: "BLOCKED (global cap)",
+              durationMs: 0,
+              error: null,
+              decision: "DENY",
+              rule: "rate_limit_global_cap",
+              session: currentSessionId,
+            });
+          }
+          return {
+            block: true,
+            blockReason: rateCheck.reason!,
+          };
+        }
+      }
+
       // Fallback mode — deny all
       if (policyEngine.isFallbackMode) {
         auditLog.append({
@@ -112,8 +222,33 @@ function initPlugin(api: any): void {
               console.warn(`[ClawGuard] ${bypassCheck.reason}`);
             }
           }
+          rateLimiter.recordExec(currentSessionId);
         }
         return;
+      }
+
+      // Check session-level approval cache (from previous "always allow")
+      const approvedSet = sessionApprovals.get(currentSessionId);
+      if (approvedSet && approvedSet.size > 0) {
+        if (EXEC_TOOLS.has(event.toolName)) {
+          const { command } = extractCommand(event.params);
+          if (command && approvedSet.has(`exec:${command}`)) {
+            logDecision("ALLOW", command, "会话内已审批 (always-allow)");
+            return;
+          }
+        }
+        if (WRITE_TOOLS.has(event.toolName)) {
+          const fp = event.params?.path || event.params?.file || event.params?.filePath || "";
+          if (fp && approvedSet.has(`file:${fp}`)) {
+            return;
+          }
+        }
+        if (NETWORK_TOOLS.has(event.toolName)) {
+          const url = event.params?.url || event.params?.uri || "";
+          if (url && approvedSet.has(`net:${url}`)) {
+            return;
+          }
+        }
       }
 
       // Route to appropriate handler
@@ -143,7 +278,12 @@ function initPlugin(api: any): void {
 
   api.on(
     "after_tool_call",
-    async (event: any) => {
+    async (event: any, ctx: any) => {
+      // Update session tracking from hook context
+      if (ctx?.sessionKey) {
+        currentSessionId = ctx.sessionKey;
+      }
+
       let resultStr: string;
       if (event.result === undefined || event.result === null) {
         resultStr = "";
@@ -172,14 +312,31 @@ function initPlugin(api: any): void {
         if (command) entry.command = command;
       }
 
+      // Record stats for non-exec tools too
+      if (!EXEC_TOOLS.has(event.toolName)) {
+        stats.recordCall(currentSessionId, event.toolName);
+      }
+      if (event.durationMs) {
+        stats.recordDuration(currentSessionId, event.durationMs);
+      }
+
       auditLog.append(entry);
     },
     { priority: 50 }
   );
 
   // ── session_end hook ───────────────────────────────────────
-  api.on("session_end", async () => {
-    sessionCache.delete(currentSessionId);
+  api.on("session_end", async (_event: any, ctx: any) => {
+    const sessionKey = ctx?.sessionKey || currentSessionId;
+    const approvalCount = sessionApprovals.get(sessionKey)?.size || 0;
+    const rateStats = rateLimiter.getStats(sessionKey);
+    const sessionStats = stats.getSession(sessionKey);
+    sessionCache.delete(sessionKey);
+    sessionApprovals.delete(sessionKey);
+    rateLimiter.reset(sessionKey);
+    stats.reset(sessionKey);
+    console.log(`[ClawGuard] 🧹 会话结束: ${sessionKey}`);
+    console.log(`  审批记忆:${approvalCount} | execs:${rateStats?.recentExecs ?? 0} | denies:${sessionStats?.denyCount ?? 0} | commands:${sessionStats?.commandCount ?? 0}`);
   });
 
   // ── Health check service ───────────────────────────────────
@@ -189,23 +346,32 @@ function initPlugin(api: any): void {
         status: "ok",
         mode: policyEngine.mode,
         fallback: policyEngine.isFallbackMode,
+        integrity: policyEngine.integrityOk,
         rules: getRuleStats(),
         sessions: sessionCache.size,
+        rateLimit: {
+          trackedSessions: rateLimiter.sessionCount,
+          currentSession: rateLimiter.getStats(currentSessionId),
+        },
       };
     }});
   }
 
   // ── Gateway methods ────────────────────────────────────────
   async function statusRpc() {
+    const sessionStats = stats.getSession(currentSessionId);
     return {
       plugin: "ClawGuard",
       version: "0.1.0",
       mode: policyEngine.mode,
       fallbackMode: policyEngine.isFallbackMode,
+      integrity: policyEngine.integrityOk,
       rules: getRuleStats(),
       auditDir: auditLog.dir,
       policySummary: policyEngine.getSummary(),
       activeSessions: sessionCache.size,
+      rateLimit: rateLimiter.getStats(currentSessionId),
+      currentSession: sessionStats,
     };
   }
 
@@ -227,6 +393,16 @@ function initPlugin(api: any): void {
   if (typeof api.registerGatewayMethod === "function") {
     api.registerGatewayMethod("clawguard.status", statusRpc);
     api.registerGatewayMethod("clawguard.config", configRpc);
+    api.registerGatewayMethod("clawguard.report", async (params?: { type?: string }) => {
+      if (params?.type === "weekly") {
+        return stats.generateReport();
+      }
+      return {
+        sessions: stats.allSessions,
+        totalSessions: stats.sessionCount,
+        heatmap: stats.generateHeatmap(),
+      };
+    });
   }
 
   console.log("[ClawGuard] Plugin ready ✓");
@@ -318,8 +494,19 @@ function handleExec(event: any): BeforeToolCallResult {
           title: "🔶 操作需审批",
           description: result.reason,
           severity: "warning",
-          timeoutMs: 60000,
+          timeoutMs: 180000,
           timeoutBehavior: "deny",
+          onResolution: async (decision: string) => {
+            if (decision === "allow-always") {
+              const { command: cmd } = extractCommand(event.params);
+              if (cmd) {
+                const sid = currentSessionId;
+                if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
+                sessionApprovals.get(sid)!.add(`exec:${cmd}`);
+                console.log(`[ClawGuard] 🔖 会话内记住审批: exec:${cmd.slice(0, 60)}`);
+              }
+            }
+          },
         },
       };
     }
@@ -349,8 +536,16 @@ function handleFileWrite(event: any): BeforeToolCallResult {
           title: "🔶 文件写入需审批",
           description: `写入路径: ${result.normalizedPath}\n${result.reason}`,
           severity: "warning",
-          timeoutMs: 60000,
+          timeoutMs: 180000,
           timeoutBehavior: "deny",
+          onResolution: async (decision: string) => {
+            if (decision === "allow-always") {
+              const sid = currentSessionId;
+              if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
+              sessionApprovals.get(sid)!.add(`file:${filePath}`);
+              console.log(`[ClawGuard] 🔖 会话内记住审批: file:${filePath}`);
+            }
+          },
         },
       };
     default:
@@ -409,8 +604,16 @@ function handleNetwork(event: any): BeforeToolCallResult {
           title: "🔶 网络请求需审批",
           description: `域名: ${result.domain}\n${result.reason}`,
           severity: "warning",
-          timeoutMs: 60000,
+          timeoutMs: 180000,
           timeoutBehavior: "deny",
+          onResolution: async (decision: string) => {
+            if (decision === "allow-always") {
+              const sid = currentSessionId;
+              if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
+              sessionApprovals.get(sid)!.add(`net:${url}`);
+              console.log(`[ClawGuard] 🔖 会话内记住审批: net:${url}`);
+            }
+          },
         },
       };
     default:
@@ -423,4 +626,17 @@ function handleNetwork(event: any): BeforeToolCallResult {
 function logDecision(decision: string, command: string, reason: string): void {
   const emoji = decision === "DENY" ? "🚫" : decision === "APPROVE" ? "🔶" : "✅";
   console.log(`[ClawGuard] ${emoji} ${decision} | ${reason} | cmd="${command.slice(0, 80)}"`);
+
+  // Update rate limiter
+  if (decision === "DENY") {
+    rateLimiter.recordDeny(currentSessionId);
+    stats.recordDeny(currentSessionId, command);
+  } else if (decision === "ALLOW") {
+    rateLimiter.recordAllow(currentSessionId);
+    rateLimiter.recordExec(currentSessionId);
+    stats.recordCall(currentSessionId, "exec", command);
+  } else if (decision === "APPROVE") {
+    stats.recordApprove(currentSessionId);
+    stats.recordCall(currentSessionId, "exec", command);
+  }
 }

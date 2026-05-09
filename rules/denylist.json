@@ -80,11 +80,6 @@
     "reason": "🚫 CRITICAL: 读取系统用户文件 /etc/passwd"
   },
   {
-    "pattern": "reboot|shutdown|halt|poweroff|init\\s+[06]",
-    "action": "deny",
-    "reason": "🚫 CRITICAL: 未经授权的系统重启/关机"
-  },
-  {
     "pattern": "find.*-name.*password|grep\\s+-r.*password",
     "action": "deny",
     "reason": "🚫 CRITICAL: 凭据枚举扫描"
@@ -148,5 +143,25 @@
     "pattern": "chown\\s+-R\\s+\\S+\\s+/",
     "action": "deny",
     "reason": "🚫 CRITICAL: 递归修改系统文件所有者"
+  },
+  {
+    "pattern": "(?:kill|pkill|killall)\\s+.*(?:openclaw|clawguard)",
+    "action": "deny",
+    "reason": "🚫 GUARDRAIL: 禁止终止安全守护进程"
+  },
+  {
+    "pattern": "systemctl\\s+--user\\s+(?:stop|disable|mask)\\s+openclaw-gateway",
+    "action": "deny",
+    "reason": "🚫 GUARDRAIL: 禁止停止 Gateway 服务"
+  },
+  {
+    "pattern": "(?:rm|mv|cp|>)\\s+.*~?/\\.clawguard/",
+    "action": "deny",
+    "reason": "🚫 GUARDRAIL: 禁止篡改安全策略目录"
+  },
+  {
+    "pattern": "(?:rm|mv|>)\\s+.*(?:clawguard-plugin|@victorqr/clawguard)",
+    "action": "deny",
+    "reason": "🚫 GUARDRAIL: 禁止删除/移动安全插件文件"
   }
 ]

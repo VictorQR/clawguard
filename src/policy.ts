@@ -4,15 +4,18 @@
  * Reads ~/.clawguard/policy.ini, supports hot-reload via write-then-rename.
  * Falls back to built-in deny-all defaults when policy file is missing or corrupt.
  */
-import { readFileSync, existsSync, watch, FSWatcher } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, watch, FSWatcher } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import type { ClawGuardMode, PolicyRule, ParsedPolicy } from "./types.js";
 
 // ── Paths ────────────────────────────────────────────────────
 
 const HOME = homedir();
-const POLICY_FILE = join(HOME, ".clawguard", "policy.ini");
+const CLAWGUARD_DIR = join(HOME, ".clawguard");
+const POLICY_FILE = join(CLAWGUARD_DIR, "policy.ini");
+const HASH_FILE = join(CLAWGUARD_DIR, ".policy-hash");
 
 // ── Fallback Defaults (when policy file is corrupt/missing) ──
 
@@ -46,6 +49,9 @@ export class PolicyEngine {
     this.load(path);
   }
 
+  private _integrityOk = true;
+  private _lastHash = "";
+
   /**
    * Load policy from file. Falls back if file missing or corrupt.
    */
@@ -54,18 +60,89 @@ export class PolicyEngine {
       console.warn("[ClawGuard] Policy file not found, using fallback deny-all");
       this.policy = { ...FALLBACK_RULES };
       this._isFallbackMode = true;
+      this._integrityOk = false;
       return;
     }
 
     try {
       const raw = readFileSync(filePath, "utf-8");
+
+      // SHA256 integrity check
+      const integrity = this.verifyIntegrity(raw, filePath);
+      if (!integrity.valid) {
+        console.error(`[ClawGuard] Policy integrity check failed: ${integrity.reason}`);
+        this.policy = { ...FALLBACK_RULES };
+        this._isFallbackMode = true;
+        this._integrityOk = false;
+        return;
+      }
+
       this.policy = this.parse(raw);
       this._isFallbackMode = false;
-      console.log(`[ClawGuard] Policy loaded: mode=${this.policy.mode}, rules=${this.policy.rules.length}`);
+      this._integrityOk = true;
+      console.log(`[ClawGuard] Policy loaded: mode=${this.policy.mode}, rules=${this.policy.rules.length}, integrity=✓`);
     } catch (err) {
       console.error("[ClawGuard] Policy file corrupt, using fallback deny-all:", err);
       this.policy = { ...FALLBACK_RULES };
       this._isFallbackMode = true;
+      this._integrityOk = false;
+    }
+  }
+
+  /**
+   * Compute SHA256 of content.
+   */
+  computeHash(content: string): string {
+    return createHash("sha256").update(content, "utf-8").digest("hex");
+  }
+
+  /**
+   * Verify policy file integrity against stored hash.
+   * First load → store hash and return valid.
+   * Hash match → valid.
+   * Hash mismatch → file may have been tampered.
+   */
+  verifyIntegrity(content: string, filePath: string): { valid: boolean; reason?: string } {
+    const currentHash = this.computeHash(content);
+    this._lastHash = currentHash;
+
+    // First load: store hash
+    if (!existsSync(HASH_FILE)) {
+      try {
+        const dir = dirname(HASH_FILE);
+        if (!existsSync(dir)) return { valid: true }; // dir may be auto-created
+        writeFileSync(HASH_FILE, currentHash, "utf-8");
+        console.log("[ClawGuard] Policy hash initialized");
+        return { valid: true };
+      } catch (err) {
+        console.warn("[ClawGuard] Could not write policy hash file:", err);
+        return { valid: true }; // Don't block on hash write failure
+      }
+    }
+
+    // Subsequent loads: verify hash
+    try {
+      const storedHash = readFileSync(HASH_FILE, "utf-8").trim();
+      if (storedHash === currentHash) {
+        return { valid: true };
+      }
+
+      // Hash changed — check if the new content parses validly
+      try {
+        this.parse(content); // Throws if invalid
+        // Content is valid → update hash (legitimate change)
+        writeFileSync(HASH_FILE, currentHash, "utf-8");
+        console.log("[ClawGuard] Policy hash updated (legitimate change detected)");
+        return { valid: true };
+      } catch {
+        return {
+          valid: false,
+          reason: `策略文件被篡改且内容损坏 (hash: ${currentHash.slice(0, 16)}...)`,
+        };
+      }
+    } catch (err) {
+      console.warn("[ClawGuard] Could not read policy hash file:", err);
+      return { valid: true }; // Don't block on hash read failure
     }
   }
 
@@ -181,6 +258,20 @@ export class PolicyEngine {
   }
 
   /**
+   * Whether policy file integrity is verified.
+   */
+  get integrityOk(): boolean {
+    return this._integrityOk;
+  }
+
+  /**
+   * Last computed policy hash.
+   */
+  get lastHash(): string {
+    return this._lastHash;
+  }
+
+  /**
    * Current operational mode.
    */
   get mode(): ClawGuardMode {
@@ -254,11 +345,12 @@ export class PolicyEngine {
   /**
    * Get a summary of the current policy state.
    */
-  getSummary(): { mode: string; rules: number; fallback: boolean } {
+  getSummary(): { mode: string; rules: number; fallback: boolean; integrity: boolean } {
     return {
       mode: this.policy.mode,
       rules: this.policy.rules.length,
       fallback: this._isFallbackMode,
+      integrity: this._integrityOk,
     };
   }
 }

@@ -85,6 +85,7 @@ export type BeforeToolCallResult =
         severity: "info" | "warning" | "critical";
         timeoutMs?: number;
         timeoutBehavior?: "allow" | "deny";
+        onResolution?: (decision: string) => Promise<void> | void;
       };
     };
 

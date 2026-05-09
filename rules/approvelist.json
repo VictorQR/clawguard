@@ -148,5 +148,10 @@
     "pattern": "^ln\\s+-s\\s",
     "action": "approve",
     "reason": "🔶 符号链接创建需审批"
+  },
+  {
+    "pattern": "reboot|shutdown|halt|poweroff|init\\s+[06]",
+    "action": "approve",
+    "reason": "🔶 系统重启/关机需审批"
   }
 ]
