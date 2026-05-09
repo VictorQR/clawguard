@@ -1,6 +1,6 @@
 {
   "name": "@victorqr/clawguard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "OpenClaw security plugin — runtime tool call interception, command-level allow/deny/approve, bypass detection, file/network path rules, and audit logging",
   "type": "module",
   "main": "dist/index.js",

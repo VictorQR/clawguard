@@ -436,7 +436,7 @@ function handleExec(event: any): BeforeToolCallResult {
       return {
         requireApproval: {
           title: "🚫 编码绕过检测",
-          description: bypassCheck.reason,
+          description: `命令: \`${command.slice(0, 200)}\`\n${bypassCheck.reason}`,
           severity: "critical",
           timeoutMs: 30000,
           timeoutBehavior: "deny",
@@ -491,8 +491,8 @@ function handleExec(event: any): BeforeToolCallResult {
       // Fallback: if SDK doesn't support requireApproval, block with message
       return {
         requireApproval: {
-          title: "🔶 操作需审批",
-          description: result.reason,
+          title: "🖥 执行命令",
+          description: `\`${command.slice(0, 300)}\`\n${result.reason}`,
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
