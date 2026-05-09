@@ -1,4 +1,4 @@
-# 🛡️ ClawGuard v0.2.0 — OpenClaw Runtime Security Plugin
+# 🛡️ ClawGuard v0.3.1 — OpenClaw Runtime Security Plugin
 
 > 轻量级 OpenClaw 安全插件，基于 `before_tool_call` 钩子实现运行时工具调用拦截。
 > 零外部依赖（仅 minimatch 用于路径匹配）、全本地决策、进程内运行。
@@ -40,6 +40,15 @@
 | **Guardrail 自防护** | 进程保护、policy.ini SHA256 完整性校验 | v0.2.0 |
 | **通道感知策略** | 群聊/私聊/Cron 按通道分级 | v0.2.0 |
 | **统计与周报** | 每会话统计、热力图、`clawguard.report` | v0.2.0 |
+| 🔴 **崩溃修复** | ESM compat、异常兜底、敏感信息脱敏 | v0.3.0 |
+| 🔴 **安全加固** | 路径遍历防护、死代码激活、JSON 完整性校验 | v0.3.0 |
+| 🔴 **enforce 默认拒绝** | 未知命令在 enforce 模式下直接拦截 | v0.3.0 |
+| 🔴 **路径写保护** | `.clawguard/` `openclaw.json` 防覆写 | v0.3.0 |
+| 🟡 **纵深防御** | Session TTL、escalate 可逆、审批上限 FIFO | v0.3.0 |
+| 🟡 **工具扩展** | process/sessions_spawn 纳入拦截 | v0.3.0 |
+| 🟡 **流式报告** | Report 流式读取避免 OOM | v0.3.0 |
+| 🟡 **网络审批** | 未知域名弹窗审批 + 云元数据拦截 | v0.3.1 |
+| 🟡 **绕过外置** | 检测模式迁至 JSON，消除安全扫描误判 | v0.3.1 |
 
 ---
 
@@ -70,7 +79,7 @@ curl -s http://127.0.0.1:18789/gateway/clawguard.status | jq
 ```json
 {
   "plugin": "ClawGuard",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "mode": "supervised",
   "fallbackMode": false,
   "integrity": true,
@@ -133,7 +142,7 @@ curl -s http://127.0.0.1:18789/gateway/clawguard.status | jq
 | 脚本运行 | `python3 *.py`, `node *.js`, `npx tsx` |
 | 条件创建 | `mkdir -p`, `echo`, `date`, `env` |
 
-#### 🔶 APPROVE — 需审批（31 条）
+#### 🔶 APPROVE — 需审批（32 条）
 
 触发审批弹窗，用户可选择：**仅此次** / **始终允许** / **拒绝**。
 
