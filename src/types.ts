@@ -41,6 +41,7 @@ export interface AuditEntry {
   params: string;
   result: string;
   durationMs: number;
+  toolCallId?: string | null;
   error: string | null;
   decision?: string;
   rule?: string;

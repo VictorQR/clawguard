@@ -7,24 +7,6 @@
   "author": "VictorQR",
   "license": "MIT",
   "entry": "dist/index.js",
-  "contracts": {
-    "tools": {
-      "clawguard.status": {
-        "description": "Get ClawGuard plugin status and current mode",
-        "parameters": {}
-      },
-      "clawguard.config": {
-        "description": "View or reload ClawGuard configuration",
-        "parameters": {
-          "action": {
-            "type": "string",
-            "enum": ["view", "reload"],
-            "description": "Action: view current config or reload policy file"
-          }
-        }
-      }
-    }
-  },
   "activation": {
     "onStartup": true
   },
@@ -32,5 +14,31 @@
     "node": ">=22"
   },
   "repository": "https://github.com/VictorQR/clawguard",
-  "keywords": ["security", "interception", "audit", "clawguard"]
+  "keywords": [
+    "security",
+    "interception",
+    "audit",
+    "clawguard"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": [
+          "permissive",
+          "supervised",
+          "enforce"
+        ],
+        "default": "supervised",
+        "description": "Security mode: permissive (log only), supervised (approval needed), enforce (block directly)"
+      },
+      "auditRetentionDays": {
+        "type": "integer",
+        "default": 90,
+        "description": "Audit log retention in days"
+      }
+    }
+  }
 }

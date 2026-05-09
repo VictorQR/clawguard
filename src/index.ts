@@ -15,12 +15,11 @@ import { extractCommand } from "./extractor.js";
 import { checkCommand, reloadRules, getRuleStats } from "./rules.js";
 import { checkBypass } from "./bypass.js";
 import { checkFileWrite, checkFileRead } from "./file-rules.js";
-import { checkDomain, addAllowedDomain } from "./network-rules.js";
+import { checkDomain } from "./network-rules.js";
 import { PolicyEngine } from "./policy.js";
 import { AuditLogger } from "./audit.js";
 import type {
   BeforeToolCallResult,
-  ClawGuardMode,
   ClawGuardSession,
   AuditEntry,
 } from "./types.js";
@@ -64,13 +63,14 @@ const NETWORK_TOOLS = new Set([
   "fetch",
 ]);
 
-// ── Start Time Tracker ───────────────────────────────────────
-
-const callStartTimes = new Map<string, number>();
-
 // ── Plugin Entry Point ───────────────────────────────────────
 
-export default function clawguardPlugin(api: any): void {
+// In ESM we use createRequire to dynamically import SDK modules
+import { createRequire } from "node:module";
+const _require = createRequire(import.meta.url);
+
+// Shared init function for both paths
+function initPlugin(api: any): void {
   console.log("[ClawGuard] Plugin initializing...");
 
   // Watch policy file for changes
@@ -82,13 +82,6 @@ export default function clawguardPlugin(api: any): void {
   api.on(
     "before_tool_call",
     async (event: any, _ctx: any) => {
-      // Track start time for duration calculation
-      const callId = `${event.toolName}:${Date.now()}:${Math.random().toString(36).slice(2, 6)}`;
-      callStartTimes.set(callId, Date.now());
-
-      // Store callId on event for after_tool_call
-      (event as any).__clawguard_callId = callId;
-
       // Fallback mode — deny all
       if (policyEngine.isFallbackMode) {
         auditLog.append({
@@ -120,31 +113,25 @@ export default function clawguardPlugin(api: any): void {
             }
           }
         }
-        return; // allow everything in permissive mode
+        return;
       }
 
       // Route to appropriate handler
       try {
         if (EXEC_TOOLS.has(event.toolName)) {
-          return handleExec(event, callId);
+          return handleExec(event);
         }
-
         if (WRITE_TOOLS.has(event.toolName)) {
           return handleFileWrite(event);
         }
-
         if (READ_TOOLS.has(event.toolName)) {
           return handleFileRead(event);
         }
-
         if (NETWORK_TOOLS.has(event.toolName) || event.toolName === "web_search") {
           return handleNetwork(event);
         }
-
-        // Tool not in our scope — allow
         return;
       } catch (err) {
-        // Fail-open: if our handler crashes, allow the tool call
         console.error("[ClawGuard] before_tool_call handler error:", err);
         return;
       }
@@ -157,15 +144,6 @@ export default function clawguardPlugin(api: any): void {
   api.on(
     "after_tool_call",
     async (event: any) => {
-      const callId = (event as any).__clawguard_callId;
-      const startTime = callId ? callStartTimes.get(callId) : undefined;
-      const durationMs = startTime ? Date.now() - startTime : 0;
-
-      if (callId) {
-        callStartTimes.delete(callId);
-      }
-
-      // Format result
       let resultStr: string;
       if (event.result === undefined || event.result === null) {
         resultStr = "";
@@ -174,11 +152,8 @@ export default function clawguardPlugin(api: any): void {
       } else if (Buffer.isBuffer(event.result)) {
         resultStr = `[Buffer: ${(event.result as Buffer).length} bytes]`;
       } else {
-        try {
-          resultStr = JSON.stringify(event.result);
-        } catch {
-          resultStr = String(event.result);
-        }
+        try { resultStr = JSON.stringify(event.result); }
+        catch { resultStr = String(event.result); }
       }
 
       const entry: AuditEntry = {
@@ -186,17 +161,15 @@ export default function clawguardPlugin(api: any): void {
         toolName: event.toolName,
         params: JSON.stringify(event.params),
         result: resultStr,
-        durationMs,
+        toolCallId: event.toolCallId || null,
+        durationMs: event.durationMs ?? 0,
         error: event.error ? String(event.error) : null,
         session: currentSessionId,
       };
 
-      // Add command if exec tool
       if (EXEC_TOOLS.has(event.toolName)) {
         const { command } = extractCommand(event.params);
-        if (command) {
-          entry.command = command;
-        }
+        if (command) entry.command = command;
       }
 
       auditLog.append(entry);
@@ -205,27 +178,25 @@ export default function clawguardPlugin(api: any): void {
   );
 
   // ── session_end hook ───────────────────────────────────────
-
   api.on("session_end", async () => {
     sessionCache.delete(currentSessionId);
-    console.log("[ClawGuard] Session ended, cache cleaned");
   });
 
   // ── Health check service ───────────────────────────────────
-
-  api.registerService("clawguard-health", async () => {
-    return {
-      status: "ok",
-      mode: policyEngine.mode,
-      fallback: policyEngine.isFallbackMode,
-      rules: getRuleStats(),
-      sessions: sessionCache.size,
-    };
-  });
+  if (typeof api.registerService === "function") {
+    api.registerService({ id: "clawguard-health", start: async () => {
+      return {
+        status: "ok",
+        mode: policyEngine.mode,
+        fallback: policyEngine.isFallbackMode,
+        rules: getRuleStats(),
+        sessions: sessionCache.size,
+      };
+    }});
+  }
 
   // ── Gateway methods ────────────────────────────────────────
-
-  api.registerGatewayMethod("clawguard.status", async () => {
+  async function statusRpc() {
     return {
       plugin: "ClawGuard",
       version: "0.1.0",
@@ -236,21 +207,14 @@ export default function clawguardPlugin(api: any): void {
       policySummary: policyEngine.getSummary(),
       activeSessions: sessionCache.size,
     };
-  });
+  }
 
-  api.registerGatewayMethod("clawguard.config", async (params: { action: string }) => {
-    if (params.action === "reload") {
+  async function configRpc(params: { action: string }) {
+    if (params?.action === "reload") {
       policyEngine.reload();
       reloadRules();
-      return {
-        success: true,
-        mode: policyEngine.mode,
-        fallback: policyEngine.isFallbackMode,
-        rules: getRuleStats(),
-      };
+      return { success: true, mode: policyEngine.mode, fallback: policyEngine.isFallbackMode, rules: getRuleStats() };
     }
-
-    // Default: view config
     return {
       mode: policyEngine.mode,
       fallbackMode: policyEngine.isFallbackMode,
@@ -258,14 +222,30 @@ export default function clawguardPlugin(api: any): void {
       policyFile: policyEngine.getSummary(),
       auditDir: auditLog.dir,
     };
-  });
+  }
+
+  if (typeof api.registerGatewayMethod === "function") {
+    api.registerGatewayMethod("clawguard.status", statusRpc);
+    api.registerGatewayMethod("clawguard.config", configRpc);
+  }
 
   console.log("[ClawGuard] Plugin ready ✓");
 }
 
+// Gateway expects a { id, name, description, register } object.
+// wrap initPlugin as the register callback.
+export default {
+  id: "clawguard",
+  name: "ClawGuard",
+  description: "OpenClaw security plugin — runtime tool call interception, command-level allow/deny/approve, bypass detection, file/network path rules, and audit logging",
+  register(api: any) {
+    initPlugin(api);
+  },
+};
+
 // ── Tool Handlers ────────────────────────────────────────────
 
-function handleExec(event: any, callId: string): BeforeToolCallResult {
+function handleExec(event: any): BeforeToolCallResult {
   const { command, isScript } = extractCommand(event.params);
 
   if (!command) {
@@ -275,7 +255,7 @@ function handleExec(event: any, callId: string): BeforeToolCallResult {
   // Step 1: Bypass detection (HIGH severity → DENY immediately)
   const bypassCheck = checkBypass(command);
   if (bypassCheck && bypassCheck.severity === "high") {
-    logDecision("DENY", callId, command, bypassCheck.reason, "bypass_detection", event);
+    logDecision("DENY", command, bypassCheck.reason);
     if (policyEngine.mode === "supervised") {
       return {
         requireApproval: {
@@ -298,11 +278,11 @@ function handleExec(event: any, callId: string): BeforeToolCallResult {
   // Step 2: Policy engine check
   const policyResult = policyEngine.checkCommand(command);
   if (policyResult === "allow") {
-    logDecision("ALLOW", callId, command, "policy allow", "policy_allow", event);
+    logDecision("ALLOW", command, "policy allow");
     return; // Allow
   }
   if (policyResult === "deny") {
-    logDecision("DENY", callId, command, "Policy 文件回退模式——拒绝", "policy_fallback_deny", event);
+    logDecision("DENY", command, "Policy 文件回退模式——拒绝");
     return { block: true, blockReason: "⚠️ Policy 回退模式——命令被拒绝" };
   }
 
@@ -311,17 +291,17 @@ function handleExec(event: any, callId: string): BeforeToolCallResult {
 
   switch (result.action) {
     case "deny": {
-      logDecision("DENY", callId, command, result.reason, result.rule, event);
+      logDecision("DENY", command, result.reason);
       return { block: true, blockReason: result.reason };
     }
 
     case "allow": {
-      logDecision("ALLOW", callId, command, result.reason, result.rule, event);
+      logDecision("ALLOW", command, result.reason);
       return; // Allow
     }
 
     case "approve": {
-      logDecision("APPROVE", callId, command, result.reason, result.rule, event);
+      logDecision("APPROVE", command, result.reason);
 
       if (policyEngine.mode === "enforce") {
         // In enforce mode, approve becomes deny
@@ -440,14 +420,7 @@ function handleNetwork(event: any): BeforeToolCallResult {
 
 // ── Decision Logging Helper ──────────────────────────────────
 
-function logDecision(
-  decision: string,
-  callId: string,
-  command: string,
-  reason: string,
-  rule: string | undefined,
-  event: any
-): void {
+function logDecision(decision: string, command: string, reason: string): void {
   const emoji = decision === "DENY" ? "🚫" : decision === "APPROVE" ? "🔶" : "✅";
   console.log(`[ClawGuard] ${emoji} ${decision} | ${reason} | cmd="${command.slice(0, 80)}"`);
 }
