@@ -12,7 +12,7 @@
  */
 import { homedir } from "node:os";
 import { extractCommand } from "./extractor.js";
-import { checkCommand, reloadRules, getRuleStats } from "./rules.js";
+import { checkCommand, reloadRules, getRuleStats, isRuleIntegrityOK } from "./rules.js";
 import { checkBypass } from "./bypass.js";
 import { checkFileWrite, checkFileRead } from "./file-rules.js";
 import { checkDomain } from "./network-rules.js";
@@ -44,6 +44,23 @@ const rateLimiter = new RateLimiter();
 
 // Stats collector for session reports
 const stats = new StatsCollector();
+
+// ── Approval Memory Limit ───────────────────────────────────
+const MAX_APPROVALS_PER_SESSION = 200;
+
+/** Add an approval entry with FIFO eviction when at capacity */
+function addApproval(sessionKey: string, key: string): void {
+  if (!sessionApprovals.has(sessionKey)) {
+    sessionApprovals.set(sessionKey, new Set());
+  }
+  const set = sessionApprovals.get(sessionKey)!;
+  if (set.size >= MAX_APPROVALS_PER_SESSION) {
+    // FIFO: remove the earliest entry (Set preserves insertion order)
+    const firstKey = set.values().next().value;
+    if (firstKey) set.delete(firstKey);
+  }
+  set.add(key);
+}
 
 // ── Channel Detection ────────────────────────────────────────
 
@@ -104,6 +121,11 @@ const NETWORK_TOOLS = new Set([
   "fetch",
 ]);
 
+const DANGEROUS_TOOLS = new Set([
+  "process",
+  "sessions_spawn",
+]);
+
 // ── Plugin Entry Point ───────────────────────────────────────
 
 // In ESM we use createRequire to dynamically import SDK modules
@@ -117,6 +139,29 @@ function initPlugin(api: any): void {
   // Watch policy file for changes
   policyEngine.watchFile();
   console.log(`[ClawGuard] Mode: ${policyEngine.mode}, Fallback: ${policyEngine.isFallbackMode}`);
+
+  // ── session_start hook ───────────────────────────────────
+
+  api.on("session_start", async (_event: any, ctx: any) => {
+    const sessionKey = ctx?.sessionKey || "unknown";
+    currentSessionId = sessionKey;
+
+    // Initialize session tracking
+    if (!sessionCache.has(sessionKey)) {
+      sessionCache.set(sessionKey, {
+        commandCount: 0,
+        denyCount: 0,
+        approveCount: 0,
+        bypassDetections: 0,
+      });
+    }
+
+    // Pre-load policy strategy
+    const channelType = parseChannelType(sessionKey);
+    const effectiveMode = CHANNEL_MODE_OVERRIDE[channelType] || policyEngine.mode;
+
+    console.log(`[ClawGuard] 🚀 会话开始: ${sessionKey} | 通道: ${channelType} | 模式: ${effectiveMode}`);
+  });
 
   // ── before_tool_call hook (priority=100) ──────────────────
 
@@ -143,6 +188,30 @@ function initPlugin(api: any): void {
               return { block: true, blockReason: "🔒 群聊通道安全策略：仅允许白名单命令" };
             }
           }
+        }
+        if (WRITE_TOOLS.has(event.toolName)) {
+          const filePath = event.params?.path || event.params?.file || event.params?.filePath || "";
+          if (filePath) {
+            const writeResult = checkFileWrite(filePath);
+            if (writeResult.action !== "allow") {
+              logDecision("DENY", filePath, "群聊通道仅允许白名单路径写入");
+              return { block: true, blockReason: "🔒 群聊通道安全策略：仅允许白名单文件写入" };
+            }
+          }
+        }
+        if (NETWORK_TOOLS.has(event.toolName)) {
+          const url = event.params?.url || event.params?.uri || "";
+          if (url) {
+            const netResult = checkDomain(url);
+            if (netResult.action !== "allow") {
+              logDecision("DENY", url, "群聊通道仅允许白名单域名");
+              return { block: true, blockReason: "🔒 群聊通道安全策略：仅允许白名单域名访问" };
+            }
+          }
+        }
+        // For exec/write/network handled above, prevent fallthrough to normal handlers
+        if (EXEC_TOOLS.has(event.toolName) || WRITE_TOOLS.has(event.toolName) || NETWORK_TOOLS.has(event.toolName)) {
+          return;
         }
         // Allow other tool types (read, etc.) in groups
       }
@@ -251,6 +320,11 @@ function initPlugin(api: any): void {
         }
       }
 
+      // Route dangerous tools through exec pipeline (process, sessions_spawn)
+      if (DANGEROUS_TOOLS.has(event.toolName)) {
+        return handleExec(event);
+      }
+
       // Route to appropriate handler
       try {
         if (EXEC_TOOLS.has(event.toolName)) {
@@ -268,7 +342,7 @@ function initPlugin(api: any): void {
         return;
       } catch (err) {
         console.error("[ClawGuard] before_tool_call handler error:", err);
-        return;
+        return { block: true, blockReason: "🔴 ClawGuard 内部异常——操作已安全拦截" };
       }
     },
     { priority: 100 }
@@ -395,12 +469,12 @@ function initPlugin(api: any): void {
     api.registerGatewayMethod("clawguard.config", configRpc);
     api.registerGatewayMethod("clawguard.report", async (params?: { type?: string }) => {
       if (params?.type === "weekly") {
-        return stats.generateReport();
+        return await stats.generateReport();
       }
       return {
         sessions: stats.allSessions,
         totalSessions: stats.sessionCount,
-        heatmap: stats.generateHeatmap(),
+        heatmap: await stats.generateHeatmap(),
       };
     });
   }
@@ -451,15 +525,21 @@ function handleExec(event: any): BeforeToolCallResult {
     console.warn(`[ClawGuard] ${bypassCheck.reason} (command: "${command.slice(0, 80)}")`);
   }
 
-  // Step 2: Policy engine check
+  // Step 2: Rule integrity check — block all if denylist is missing
+  if (!isRuleIntegrityOK()) {
+    logDecision("DENY", command, "规则文件缺失");
+    return { block: true, blockReason: "🔴 安全规则缺失——denylist.json 为空或损坏，所有 exec 命令已拦截" };
+  }
+
+  // Step 3: Policy engine check
   const policyResult = policyEngine.checkCommand(command);
   if (policyResult === "allow") {
     logDecision("ALLOW", command, "policy allow");
     return; // Allow
   }
   if (policyResult === "deny") {
-    logDecision("DENY", command, "Policy 文件回退模式——拒绝");
-    return { block: true, blockReason: "⚠️ Policy 回退模式——命令被拒绝" };
+    logDecision("DENY", command, "Policy 拒绝");
+    return { block: true, blockReason: "🚫 安全策略拒绝——命令不在允许列表中" };
   }
 
   // Step 3: Three-tier rule engine
@@ -472,6 +552,11 @@ function handleExec(event: any): BeforeToolCallResult {
     }
 
     case "allow": {
+      // In enforce mode, unknown commands are denied by default
+      if (policyEngine.mode === "enforce" && result.reason === "未匹配任何规则（默认放行）") {
+        logDecision("DENY", command, "enforce 模式——未在白名单");
+        return { block: true, blockReason: "🔴 enforce 模式——命令未在白名单中，已拦截" };
+      }
       logDecision("ALLOW", command, result.reason);
       return; // Allow
     }
@@ -500,9 +585,7 @@ function handleExec(event: any): BeforeToolCallResult {
             if (decision === "allow-always") {
               const { command: cmd } = extractCommand(event.params);
               if (cmd) {
-                const sid = currentSessionId;
-                if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
-                sessionApprovals.get(sid)!.add(`exec:${cmd}`);
+                addApproval(currentSessionId, `exec:${cmd}`);
                 console.log(`[ClawGuard] 🔖 会话内记住审批: exec:${cmd.slice(0, 60)}`);
               }
             }
@@ -522,6 +605,12 @@ function handleFileWrite(event: any): BeforeToolCallResult {
     return; // No path — allow
   }
 
+  // Step 1: Policy engine check (policy.ini allow_write / deny_write rules)
+  const policyResult = policyEngine.checkWritePath(filePath);
+  if (policyResult === "allow") return;
+  if (policyResult === "deny") return { block: true, blockReason: "🚫 策略拒绝——写入路径不在允许列表中" };
+
+  // Step 2: File rules check
   const result = checkFileWrite(filePath);
 
   switch (result.action) {
@@ -540,9 +629,7 @@ function handleFileWrite(event: any): BeforeToolCallResult {
           timeoutBehavior: "deny",
           onResolution: async (decision: string) => {
             if (decision === "allow-always") {
-              const sid = currentSessionId;
-              if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
-              sessionApprovals.get(sid)!.add(`file:${filePath}`);
+              addApproval(currentSessionId, `file:${filePath}`);
               console.log(`[ClawGuard] 🔖 会话内记住审批: file:${filePath}`);
             }
           },
@@ -590,6 +677,12 @@ function handleNetwork(event: any): BeforeToolCallResult {
     return;
   }
 
+  // Step 1: Policy engine check (policy.ini allow_domain rules)
+  const policyResult = policyEngine.checkDomain(url);
+  if (policyResult === "allow") return;
+  if (policyResult === "deny") return { block: true, blockReason: "🚫 策略拒绝——域名不在允许列表中" };
+
+  // Step 2: Network rules check
   const result = checkDomain(url);
 
   switch (result.action) {
@@ -608,9 +701,7 @@ function handleNetwork(event: any): BeforeToolCallResult {
           timeoutBehavior: "deny",
           onResolution: async (decision: string) => {
             if (decision === "allow-always") {
-              const sid = currentSessionId;
-              if (!sessionApprovals.has(sid)) sessionApprovals.set(sid, new Set());
-              sessionApprovals.get(sid)!.add(`net:${url}`);
+              addApproval(currentSessionId, `net:${url}`);
               console.log(`[ClawGuard] 🔖 会话内记住审批: net:${url}`);
             }
           },
@@ -625,7 +716,8 @@ function handleNetwork(event: any): BeforeToolCallResult {
 
 function logDecision(decision: string, command: string, reason: string): void {
   const emoji = decision === "DENY" ? "🚫" : decision === "APPROVE" ? "🔶" : "✅";
-  console.log(`[ClawGuard] ${emoji} ${decision} | ${reason} | cmd="${command.slice(0, 80)}"`);
+  const safeCmd = auditLog.sanitize(command.slice(0, 80));
+  console.log(`[ClawGuard] ${emoji} ${decision} | ${reason} | cmd="${safeCmd}"`);
 
   // Update rate limiter
   if (decision === "DENY") {

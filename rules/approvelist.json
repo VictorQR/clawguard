@@ -125,6 +125,11 @@
     "reason": "🔶 系统服务管理需审批"
   },
   {
+    "pattern": "^openclaw\\s+gateway\\s+restart",
+    "action": "approve",
+    "reason": "🔶 Gateway 重启需审批"
+  },
+  {
     "pattern": "^crontab\\s+-e",
     "action": "approve",
     "reason": "🔶 编辑定时任务需审批"

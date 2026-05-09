@@ -98,18 +98,30 @@ export function checkDomain(urlOrDomain: string): NetworkCheckResult {
     };
   }
 
-  // Check localhost / private IPs — always allow
+  // Check localhost / private IPs — always allow (RFC 1918 + RFC 5735)
   if (
     domain === "localhost" ||
     domain === "127.0.0.1" ||
     domain === "0.0.0.0" ||
     domain.startsWith("192.168.") ||
     domain.startsWith("10.") ||
-    domain.startsWith("172.16.")
+    /^172\.(1[6-9]|2\d|3[01])\./.test(domain)  // RFC 1918: 172.16.0.0/12
   ) {
     return {
       action: "allow",
       reason: "✅ 本地/私有网络地址",
+      domain,
+    };
+  }
+
+  // Explicitly deny cloud metadata endpoints (IMDS)
+  if (
+    domain === "169.254.169.254" ||
+    domain === "metadata.google.internal"
+  ) {
+    return {
+      action: "deny",
+      reason: "🚫 禁止访问云元数据服务",
       domain,
     };
   }

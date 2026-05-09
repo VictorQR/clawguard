@@ -3,8 +3,15 @@
  *
  * Per-session counters, hourly heatmap, and report generation.
  */
-import { readFileSync, existsSync, renameSync, mkdirSync } from "node:fs";
+import {
+  readFileSync,
+  existsSync,
+  renameSync,
+  mkdirSync,
+  createReadStream,
+} from "node:fs";
 import { join, dirname } from "node:path";
+import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 
 // ── Paths ────────────────────────────────────────────────────
@@ -148,8 +155,47 @@ export class StatsCollector {
     return this.sessions.size;
   }
 
-  /** Generate hourly heatmap from audit log */
-  generateHeatmap(date?: string): HourlyHeatmap[] {
+  /** Generate an hourly heatmap from audit log (streaming) */
+  async generateHeatmap(date?: string): Promise<HourlyHeatmap[]> {
+    const target = date || new Date().toISOString().slice(0, 10);
+    const file = join(AUDIT_DIR, `${target}.jsonl`);
+
+    if (!existsSync(file)) return [];
+
+    const heatmap: Record<string, { total: number; denied: number; approved: number }> = {};
+    for (let h = 0; h < 24; h++) {
+      const key = `${String(h).padStart(2, "0")}:00`;
+      heatmap[key] = { total: 0, denied: 0, approved: 0 };
+    }
+
+    try {
+      const rl = createInterface({
+        input: createReadStream(file, { encoding: "utf-8" }),
+        crlfDelay: Infinity,
+      });
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          const hour = entry.timestamp?.slice(11, 13) || "00";
+          const key = `${hour}:00`;
+          if (heatmap[key]) {
+            heatmap[key].total += 1;
+            if (entry.decision === "DENY") heatmap[key].denied += 1;
+            if (entry.decision === "APPROVE") heatmap[key].approved += 1;
+          }
+        } catch { /* skip malformed lines */ }
+      }
+    } catch { /* file read error */ }
+
+    return Object.entries(heatmap).map(([hour, data]) => ({
+      hour,
+      ...data,
+    }));
+  }
+
+  /** Synchronous heatmap (non-streaming, for backward compat) */
+  generateHeatmapSync(date?: string): HourlyHeatmap[] {
     const target = date || new Date().toISOString().slice(0, 10);
     const file = join(AUDIT_DIR, `${target}.jsonl`);
 
@@ -184,18 +230,20 @@ export class StatsCollector {
     }));
   }
 
-  /** Generate a weekly report */
-  generateReport(): WeeklyReport {
+  /**
+   * Generate a weekly report using streaming reads.
+   * Reads 7 days of JSONL audit logs line-by-line without loading all entries into memory.
+   */
+  async generateReport(): Promise<WeeklyReport> {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Collect audit entries from the past 7 days
-    const entries: Array<{
-      decision?: string;
-      toolName: string;
-      command?: string;
-      session?: string;
-    }> = [];
+    // Aggregators (incremental, not array-backed)
+    let totalCommands = 0;
+    let totalDenied = 0;
+    let totalApproved = 0;
+    const sessions = new Set<string>();
+    const denyMap = new Map<string, number>();
 
     for (let d = 0; d < 7; d++) {
       const date = new Date(weekAgo.getTime() + d * 24 * 60 * 60 * 1000);
@@ -204,29 +252,32 @@ export class StatsCollector {
       if (!existsSync(file)) continue;
 
       try {
-        const content = readFileSync(file, "utf-8");
-        for (const line of content.trim().split("\n")) {
-          try { entries.push(JSON.parse(line)); } catch { /* skip */ }
+        const rl = createInterface({
+          input: createReadStream(file, { encoding: "utf-8" }),
+          crlfDelay: Infinity,
+        });
+        for await (const line of rl) {
+          if (!line.trim()) continue;
+          try {
+            const e = JSON.parse(line);
+            totalCommands += 1;
+            if (e.decision === "DENY") totalDenied += 1;
+            if (e.decision === "APPROVE") totalApproved += 1;
+            if (e.session) sessions.add(e.session);
+            if (e.decision === "DENY" && e.command) {
+              denyMap.set(e.command, (denyMap.get(e.command) || 0) + 1);
+            }
+          } catch { /* skip malformed line */ }
         }
-      } catch { /* skip */ }
+      } catch { /* skip unreadable file */ }
     }
 
-    const totalCommands = entries.length;
-    const totalDenied = entries.filter(e => e.decision === "DENY").length;
-    const totalApproved = entries.filter(e => e.decision === "APPROVE").length;
-    const sessions = new Set(entries.map(e => e.session).filter(Boolean));
-
-    // Top denied commands
-    const denyMap = new Map<string, number>();
-    for (const e of entries) {
-      if (e.decision === "DENY" && e.command) {
-        denyMap.set(e.command, (denyMap.get(e.command) || 0) + 1);
-      }
-    }
     const topDenied = Array.from(denyMap.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([command, count]) => ({ command: command.slice(0, 80), count }));
+
+    const heatmap = await this.generateHeatmap(now.toISOString().slice(0, 10));
 
     return {
       generated: now.toISOString(),
@@ -243,7 +294,7 @@ export class StatsCollector {
           : "0%",
         activeSessions: sessions.size,
         topDeniedCommands: topDenied,
-        heatmap: this.generateHeatmap(now.toISOString().slice(0, 10)),
+        heatmap,
       },
       sessions: this.allSessions,
     };

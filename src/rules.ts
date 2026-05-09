@@ -40,6 +40,16 @@ const DENY_RULES: CommandRule[] = loadRules("denylist.json");
 const ALLOW_RULES: CommandRule[] = loadRules("allowlist.json");
 const APPROVE_RULES: CommandRule[] = loadRules("approvelist.json");
 
+// ── Integrity Check ─────────────────────────────────────────
+
+export function isRuleIntegrityOK(): boolean {
+  if (DENY_RULES.length === 0) {
+    console.error("[ClawGuard] 🔴 CRITICAL: denylist.json 为空或缺失！所有安全规则无效。");
+    return false;
+  }
+  return true;
+}
+
 // ── Matching Engine ─────────────────────────────────────────
 
 /**

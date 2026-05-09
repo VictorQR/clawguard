@@ -25,6 +25,12 @@ const CONSECUTIVE_DENY_THRESHOLD = 3;
 /** Pause duration when burst is detected */
 const BURST_PAUSE_MS = 30_000;
 
+/** Session inactivity timeout before cleanup (30 min) */
+const STALE_SESSION_MS = 30 * 60_000;
+
+/** Consecutive allows before auto-deescalation from enforce mode */
+const CONSECUTIVE_ALLOW_DEESCALATION_THRESHOLD = 10;
+
 // ── Types ────────────────────────────────────────────────────
 
 export interface RateCheckResult {
@@ -40,6 +46,8 @@ interface SessionRateState {
   burstUntil: number;              // timestamp until burst pause expires (0 = not paused)
   escalated: boolean;              // enforce mode auto-triggered
   lastExecTime: number;            // last exec timestamp
+  lastActivity: number;            // timestamp of last activity (for TTL cleanup)
+  consecutiveAllowCount: number;   // consecutive successful allows (for de-escalation)
 }
 
 // ── Rate Limiter ─────────────────────────────────────────────
@@ -51,6 +59,7 @@ export class RateLimiter {
   checkExecRate(sessionKey: string): RateCheckResult {
     const now = Date.now();
     const state = this.getOrCreate(sessionKey);
+    state.lastActivity = now;
 
     // 1. Global cap check (5 min window)
     const globalCutoff = now - GLOBAL_WINDOW_MS;
@@ -95,16 +104,58 @@ export class RateLimiter {
     const state = this.getOrCreate(sessionKey);
     state.execTimestamps.push(now);
     state.lastExecTime = now;
+    state.lastActivity = now;
     // Trim old timestamps (keep last GLOBAL_WINDOW_MS)
     const cutoff = now - GLOBAL_WINDOW_MS;
     state.execTimestamps = state.execTimestamps.filter(t => t >= cutoff);
+
+    // Periodically cleanse stale sessions to prevent memory leaks
+    this.cleanupStaleSessions();
   }
 
   /** Record a deny decision, check for consecutive deny escalation */
   recordDeny(sessionKey: string): RateCheckResult {
     const state = this.getOrCreate(sessionKey);
-    state.denyCount += 1;
+    state.lastActivity = Date.now();
 
+    // Reset allow streak on any deny
+    state.consecutiveAllowCount = 0;
+
+    this.incrementDenyCount(sessionKey);
+    const escalation = this.checkEscalation(sessionKey);
+    if (escalation) return escalation;
+
+    return { allowed: true };
+  }
+
+  /** Reset deny counter and track consecutive allows for de-escalation */
+  recordAllow(sessionKey: string): void {
+    const state = this.sessions.get(sessionKey);
+    if (state) {
+      state.denyCount = 0;
+      state.lastActivity = Date.now();
+      state.consecutiveAllowCount += 1;
+
+      // Auto-deescalate after enough consecutive allows
+      if (state.escalated && state.consecutiveAllowCount >= CONSECUTIVE_ALLOW_DEESCALATION_THRESHOLD) {
+        state.escalated = false;
+        state.consecutiveAllowCount = 0;
+      }
+    }
+  }
+
+  /** Increment consecutive deny counter (single responsibility) */
+  private incrementDenyCount(sessionKey: string): void {
+    const state = this.sessions.get(sessionKey);
+    if (state) {
+      state.denyCount += 1;
+    }
+  }
+
+  /** Check if escalation threshold has been met (single responsibility) */
+  private checkEscalation(sessionKey: string): RateCheckResult | null {
+    const state = this.sessions.get(sessionKey);
+    if (!state) return null;
     if (state.denyCount >= CONSECUTIVE_DENY_THRESHOLD && !state.escalated) {
       state.escalated = true;
       return {
@@ -113,16 +164,7 @@ export class RateLimiter {
         escalated: true,
       };
     }
-
-    return { allowed: true };
-  }
-
-  /** Reset deny counter (on successful allow) */
-  recordAllow(sessionKey: string): void {
-    const state = this.sessions.get(sessionKey);
-    if (state) {
-      state.denyCount = 0;
-    }
+    return null;
   }
 
   /** Check if session is in escalated (enforce) mode */
@@ -151,6 +193,21 @@ export class RateLimiter {
     this.sessions.delete(sessionKey);
   }
 
+  /** Clean up sessions inactive for more than STALE_SESSION_MS (30 min).
+   *  Returns the number of sessions removed. */
+  cleanupStaleSessions(): number {
+    const now = Date.now();
+    const cutoff = now - STALE_SESSION_MS;
+    let removed = 0;
+    for (const [key, state] of this.sessions) {
+      if (state.lastActivity < cutoff) {
+        this.sessions.delete(key);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   /** Get total tracked sessions */
   get sessionCount(): number {
     return this.sessions.size;
@@ -164,6 +221,8 @@ export class RateLimiter {
         burstUntil: 0,
         escalated: false,
         lastExecTime: 0,
+        lastActivity: Date.now(),
+        consecutiveAllowCount: 0,
       });
     }
     return this.sessions.get(sessionKey)!;

@@ -40,7 +40,7 @@ const SENSITIVE_PATTERNS: SensitivePattern[] = [
   },
   // API keys, secrets, passwords in key=value or key:value format
   {
-    regex: /(?:api[_-]?key|apikey|secret|password|token)\s*[:=]\s*['"]?\S+['"]?/gi,
+    regex: /(api[_-]?key|apikey|secret|password|token)\s*[:=]\s*['"]?\S+['"]?/gi,
     replace: "$1: [REDACTED]",
   },
   // SSH private keys

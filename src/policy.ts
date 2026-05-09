@@ -17,6 +17,32 @@ const CLAWGUARD_DIR = join(HOME, ".clawguard");
 const POLICY_FILE = join(CLAWGUARD_DIR, "policy.ini");
 const HASH_FILE = join(CLAWGUARD_DIR, ".policy-hash");
 
+// ── Helpers ──────────────────────────────────────────────────
+
+/** Escape regex special characters in a string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Match a command against an allow_cmd rule value using word-boundary matching.
+ * Example: ruleValue="cat" matches "cat file.txt" but NOT "catastrophe" or "catalogue".
+ * Rules with spaces (like "gio trash") match as prefix with trailing space boundary.
+ */
+function matchAllowCmd(cmd: string, ruleValue: string): boolean {
+  const trimmedCmd = cmd.trim();
+  const trimmedRule = ruleValue.trim();
+
+  if (trimmedRule.includes(" ")) {
+    // Multi-word rule (e.g., "gio trash"): prefix match with word boundary
+    return new RegExp("^" + escapeRegex(trimmedRule) + "(\\s|$)").test(trimmedCmd);
+  }
+
+  // Single-word rule: exact match on the first token (the command name)
+  const firstToken = trimmedCmd.split(/\s+/)[0];
+  return firstToken === trimmedRule;
+}
+
 // ── Fallback Defaults (when policy file is corrupt/missing) ──
 
 const FALLBACK_RULES: ParsedPolicy = {
@@ -286,7 +312,7 @@ export class PolicyEngine {
     if (this._isFallbackMode) {
       // In fallback mode, only allow list applies
       for (const rule of this.policy.rules) {
-        if (rule.type === "allow_cmd" && cmd.trim().startsWith(rule.value)) {
+        if (rule.type === "allow_cmd" && matchAllowCmd(cmd, rule.value)) {
           return "allow";
         }
       }
@@ -294,7 +320,7 @@ export class PolicyEngine {
     }
 
     for (const rule of this.policy.rules) {
-      if (rule.type === "allow_cmd" && cmd.trim().startsWith(rule.value)) {
+      if (rule.type === "allow_cmd" && matchAllowCmd(cmd, rule.value)) {
         return "allow";
       }
     }

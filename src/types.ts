@@ -2,6 +2,8 @@
  * ClawGuard — Common Type Definitions
  */
 
+import { homedir } from "node:os";
+
 // ── Rule Types ───────────────────────────────────────────────
 
 export type RuleAction = "deny" | "allow" | "approve";
@@ -65,8 +67,8 @@ export interface ClawGuardConfig {
 
 export const DEFAULT_CONFIG: ClawGuardConfig = {
   mode: "supervised",
-  policyFile: require("os").homedir() + "/.clawguard/policy.ini",
-  auditDir: require("os").homedir() + "/.clawguard/audit",
+  policyFile: homedir() + "/.clawguard/policy.ini",
+  auditDir: homedir() + "/.clawguard/audit",
   auditRetentionDays: 90,
   allowCommands: [],
   denyCommands: [],
