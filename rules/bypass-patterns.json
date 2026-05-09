@@ -1,0 +1,61 @@
+[
+  {
+    "id": "base64-pipe-shell",
+    "pattern": "base64\\s+-d\\s*\\|.*(?:bash|sh|python|perl)",
+    "flags": "",
+    "severity": "high",
+    "reason": "🚫 base64 decode 管道到 shell——编码绕过"
+  },
+  {
+    "id": "base64-decode-exec",
+    "pattern": "base64\\s+(-d|--decode)",
+    "flags": "",
+    "severity": "high",
+    "reason": "🚫 base64 解码后执行——编码绕过",
+    "chainPattern": "(?:bash|sh|python|perl|node)\\b",
+    "chainFlags": ""
+  },
+  {
+    "id": "eval-dynamic-code",
+    "pattern": "\\beval\\s*(?:\\(|\\s*['\"`]?(?:\\$|\\(|\"|'))",
+    "flags": "",
+    "severity": "high",
+    "reason": "🚫 eval 动态代码执行——编码绕过"
+  },
+  {
+    "id": "quote-injection",
+    "pattern": "ba'sh'|ba\"sh\"|b\\\\ash",
+    "flags": "",
+    "severity": "medium",
+    "reason": "⚠️ 命令混淆绕过尝试（引号分隔）"
+  },
+  {
+    "id": "backslash-continuation",
+    "pattern": "\\\\$|\\\\\\n",
+    "flags": "",
+    "severity": "medium",
+    "reason": "⚠️ 反斜杠续行——可能用于绕过模式匹配"
+  },
+  {
+    "id": "process-substitution",
+    "pattern": "<\\(.*\\)",
+    "flags": "",
+    "severity": "medium",
+    "reason": "⚠️ 进程替换——可能用于间接文件读取"
+  },
+  {
+    "id": "hex-octal-escape",
+    "pattern": "\\$\\(?:x[0-9a-fA-F]{2}|[0-7]{3})",
+    "flags": "i",
+    "severity": "medium",
+    "reason": "⚠️ 十六进制/八进制转义——命令混淆"
+  },
+  {
+    "id": "variable-indirection",
+    "pattern": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\[@\\]?\\}",
+    "flags": "",
+    "severity": "low",
+    "reason": "⚠️ 变量间接引用——可能的命令混淆",
+    "excludeMatch": "^(export|echo|env|printenv|declare|typeset|set|readonly|printf)\\s"
+  }
+]

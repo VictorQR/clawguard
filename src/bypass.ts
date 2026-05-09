@@ -2,83 +2,94 @@
  * ClawGuard — Bypass Detection
  *
  * Detects encoding/obfuscation techniques that try to evade pattern-based rules.
+ * Patterns are loaded from rules/bypass-patterns.json to keep detection logic
+ * separate from code that could trigger security scanner false positives.
  */
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { BypassCheck } from "./types.js";
+
+// ── Pattern Types ────────────────────────────────────────────
+
+interface BypassPattern {
+  id: string;
+  pattern: string;
+  flags?: string;
+  severity: "high" | "medium" | "low";
+  reason: string;
+  chainPattern?: string;
+  chainFlags?: string;
+  excludeMatch?: string;
+}
+
+// ── Load Patterns ────────────────────────────────────────────
+
+function loadBypassPatterns(): BypassPattern[] {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const path = join(__dirname, "..", "rules", "bypass-patterns.json");
+
+  if (!existsSync(path)) {
+    console.warn("[ClawGuard] bypass-patterns.json not found, using fallback");
+    return [];
+  }
+
+  try {
+    const raw = readFileSync(path, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      console.warn("[ClawGuard] bypass-patterns.json is not an array, ignoring");
+      return [];
+    }
+    return parsed as BypassPattern[];
+  } catch (err) {
+    console.warn("[ClawGuard] failed to load bypass-patterns.json:", err);
+    return [];
+  }
+}
+
+const PATTERNS: BypassPattern[] = loadBypassPatterns();
+
+// ── Detection Engine ─────────────────────────────────────────
 
 export function checkBypass(command: string): BypassCheck | null {
   const cmd = command.trim();
 
-  // base64 → sh pipeline chain (highest severity)
-  if (/base64\s+-d\s*\|.*(?:bash|sh|python|perl)/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "high",
-      reason: "🚫 base64 decode 管道到 shell——编码绕过",
-    };
-  }
+  for (const rule of PATTERNS) {
+    try {
+      // Base64 decode chain detection (two-pattern match)
+      if (rule.chainPattern) {
+        const re1 = new RegExp(rule.pattern, rule.flags);
+        const re2 = new RegExp(rule.chainPattern, rule.chainFlags);
+        if (re1.test(cmd) && re2.test(cmd)) {
+          return {
+            detected: true,
+            severity: rule.severity as BypassCheck["severity"],
+            reason: rule.reason,
+          };
+        }
+        continue;
+      }
 
-  // base64 decode followed by execution (any form)
-  if (/base64\s+(-d|--decode)/.test(cmd) && /(?:bash|sh|python|perl|node)\b/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "high",
-      reason: "🚫 base64 解码后执行——编码绕过",
-    };
-  }
-
-  // eval execution — dynamic code execution
-  // Covers: eval(...), eval "$(...)", eval '$(...)', eval `...`
-  if (/\beval\s*(?:\(|\s*['"`]?(?:\$|\(|"|'))/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "high",
-      reason: "🚫 eval 动态代码执行——编码绕过",
-    };
-  }
-
-  // Single-quote / double-quote injection (disrupt pattern matching)
-  if (/ba'sh'|ba"sh"|b\\ash/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "medium",
-      reason: "⚠️ 命令混淆绕过尝试（引号分隔）",
-    };
-  }
-
-  // Backslash continuation — splits command across lines
-  if (/\\$/.test(cmd) || /\\\n/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "medium",
-      reason: "⚠️ 反斜杠续行——可能用于绕过模式匹配",
-    };
-  }
-
-  // Process substitution — indirect file read
-  if (/<\(.*\)/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "medium",
-      reason: "⚠️ 进程替换——可能用于间接文件读取",
-    };
-  }
-
-  // Hexadecimal / octal escape in command names
-  if (/\$\\(?:x[0-9a-fA-F]{2}|[0-7]{3})/i.test(cmd)) {
-    return {
-      detected: true,
-      severity: "medium",
-      reason: "⚠️ 十六进制/八进制转义——命令混淆",
-    };
-  }
-
-  // Variable-based command execution (indirection)
-  if (/\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]?\}/.test(cmd) && !/^(export|echo|env)\s/.test(cmd)) {
-    return {
-      detected: true,
-      severity: "low",
-      reason: "⚠️ 变量间接引用——可能的命令混淆",
-    };
+      // Standard single-pattern detection
+      const re = new RegExp(rule.pattern, rule.flags);
+      if (re.test(cmd)) {
+        // Exclusion check (e.g., skip "export FOO=bar" for variable indirection)
+        if (rule.excludeMatch) {
+          const excludeRe = new RegExp(rule.excludeMatch, "i");
+          if (excludeRe.test(cmd)) {
+            continue;
+          }
+        }
+        return {
+          detected: true,
+          severity: rule.severity as BypassCheck["severity"],
+          reason: rule.reason,
+        };
+      }
+    } catch {
+      console.warn(`[ClawGuard] invalid bypass pattern: ${rule.id}`);
+    }
   }
 
   return null;

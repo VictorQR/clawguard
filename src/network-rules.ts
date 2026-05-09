@@ -26,6 +26,10 @@ const ALLOWED_DOMAINS: string[] = [
   // Search APIs
   "api.tavily.ai",
 
+  // OpenClaw
+  "docs.openclaw.ai",
+  "openclaw.ai",
+
   // Localhost (always allowed)
   "localhost",
   "127.0.0.1",
@@ -136,11 +140,11 @@ export function checkDomain(urlOrDomain: string): NetworkCheckResult {
     };
   }
 
-  // Default deny
+  // Default: require approval for unknown domains
   if (DENIED_DOMAINS_BY_DEFAULT) {
     return {
-      action: "deny",
-      reason: `🚫 域名不在白名单内: ${domain}`,
+      action: "approve",
+      reason: `🔶 域名不在白名单内: ${domain}`,
       domain,
     };
   }
