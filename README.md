@@ -1,4 +1,4 @@
-# 🛡️ ClawGuard v0.3.1 — OpenClaw Runtime Security Plugin
+# 🛡️ ClawGuard v0.3.2 — OpenClaw Runtime Security Plugin
 
 > 轻量级 OpenClaw 安全插件，基于 `before_tool_call` 钩子实现运行时工具调用拦截。
 > 零外部依赖（仅 minimatch 用于路径匹配）、全本地决策、进程内运行。
@@ -49,6 +49,9 @@
 | 🟡 **流式报告** | Report 流式读取避免 OOM | v0.3.0 |
 | 🟡 **网络审批** | 未知域名弹窗审批 + 云元数据拦截 | v0.3.1 |
 | 🟡 **绕过外置** | 检测模式迁至 JSON，消除安全扫描误判 | v0.3.1 |
+| 🟢 **只读工具放行** | web_fetch/search/memory 等 10 个工具免审批 | v0.3.2 |
+| 🟢 **Fallback 分级** | Policy 损坏时拒绝写/执行，允许只读自愈诊断 | v0.3.2 |
+| 🟢 **工具扩展** | sessions_list / sessions_history 加入只读白名单 | v0.3.2 |
 
 ---
 
@@ -79,7 +82,7 @@ curl -s http://127.0.0.1:18789/gateway/clawguard.status | jq
 ```json
 {
   "plugin": "ClawGuard",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "mode": "supervised",
   "fallbackMode": false,
   "integrity": true,
@@ -576,6 +579,9 @@ npx tsx tests/integration.test.ts
 
 | 版本 | 日期 | 变更 |
 |:-----|:-----|:-----|
+| v0.3.2 | 2026-05-10 | 只读工具放行（10个工具免审批）、Fallback 分级（拒绝写/执行，允许只读自愈）、速率计数污染修复 |
+| v0.3.1 | 2026-05-09 | 绕过检测模式外置 + 网络审批修复 |
+| v0.3.0 | 2026-05-09 | 崩溃修复、安全加固、enforce 默认拒绝、路径写保护 |
 | v0.2.0 | 2026-05-09 | 速率限制（burst/global/escalation）、Guardrail 自防护（进程保护+policy SHA256）、通道感知策略（群聊/Cron）、统计周报 |
 | v0.1.1 | 2026-05-09 | 修复 HookRunner 调度（`api.on` 替代 `api.registerHook`）、会话审批记忆、会话追踪修复 |
 | v0.1.0 | 2026-05-08 | 初始发布：三段式规则引擎、编码绕过检测、文件/网络规则、Policy 热加载、审计日志 |
@@ -588,4 +594,4 @@ MIT License — Copyright (c) 2026 VictorQR
 
 ---
 
-*ClawGuard v0.2.0 — 运行时安全，从源头开始。*
+*ClawGuard v0.3.2 — 运行时安全，从源头开始。*

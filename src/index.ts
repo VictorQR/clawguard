@@ -121,6 +121,22 @@ const NETWORK_TOOLS = new Set([
   "fetch",
 ]);
 
+// Read-only tools: auto-allow (no exec, no write, no side effects)
+// ⚠️ web_search was originally handled by handleNetwork with a special case.
+// If removed from this set, restore the handleNetwork special case for audit coverage.
+const READONLY_TOOLS = new Set([
+  "web_fetch",
+  "web_search",
+  "memory_search",
+  "memory_get",
+  "memory_recall",
+  "image",
+  "session_status",
+  "weather",
+  "sessions_list",
+  "sessions_history",
+]);
+
 const DANGEROUS_TOOLS = new Set([
   "process",
   "sessions_spawn",
@@ -261,7 +277,18 @@ function initPlugin(api: any): void {
         }
       }
 
-      // Fallback mode — deny all
+      // Read operations: auto-allow even in fallback (zero side effects, self-healing)
+      // Design: deny-all-for-exec, allow-all-for-read
+      if (READONLY_TOOLS.has(event.toolName)) {
+        stats.recordCall(currentSessionId, event.toolName);
+        console.log(`[ClawGuard] ✅ ALLOW | 只读工具自动放行 | tool="${event.toolName}"`);
+        return;
+      }
+      if (READ_TOOLS.has(event.toolName)) {
+        return handleFileRead(event); // Already permissive: only blocks denied_paths
+      }
+
+      // Fallback mode — deny write/exec operations
       if (policyEngine.isFallbackMode) {
         auditLog.append({
           timestamp: new Date().toISOString(),
@@ -276,7 +303,7 @@ function initPlugin(api: any): void {
         });
         return {
           block: true,
-          blockReason: "⚠️ Policy 文件损坏，已启用 deny-all 安全模式",
+          blockReason: "⚠️ Policy 文件损坏，已拒绝写/执行操作。只读操作仍可用。",
         };
       }
 
@@ -336,7 +363,7 @@ function initPlugin(api: any): void {
         if (READ_TOOLS.has(event.toolName)) {
           return handleFileRead(event);
         }
-        if (NETWORK_TOOLS.has(event.toolName) || event.toolName === "web_search") {
+        if (NETWORK_TOOLS.has(event.toolName)) {
           return handleNetwork(event);
         }
         return;
@@ -664,12 +691,6 @@ function handleFileRead(event: any): BeforeToolCallResult {
 }
 
 function handleNetwork(event: any): BeforeToolCallResult {
-  // Handle web_search (domain-based check from params)
-  if (event.toolName === "web_search") {
-    // web_search uses an internal provider; intercept based on allowed search providers
-    return; // Allow web_search — search providers are controlled by the gateway
-  }
-
   // Handle web_fetch / http_request / fetch
   const url = event.params?.url || event.params?.uri || "";
   if (typeof url !== "string" || !url) {
@@ -713,6 +734,8 @@ function handleNetwork(event: any): BeforeToolCallResult {
 }
 
 // ── Decision Logging Helper ──────────────────────────────────
+// ⚠️ 仅用于 exec 路径的决策日志——内部调用 rateLimiter.recordExec() 和
+// stats.recordCall("exec", ...)。README等只读工具不应通过此处，应直接 console.log。
 
 function logDecision(decision: string, command: string, reason: string): void {
   const emoji = decision === "DENY" ? "🚫" : decision === "APPROVE" ? "🔶" : "✅";
