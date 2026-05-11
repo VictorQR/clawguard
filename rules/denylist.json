@@ -150,9 +150,9 @@
     "reason": "🚫 GUARDRAIL: 禁止终止安全守护进程"
   },
   {
-    "pattern": "systemctl\\s+--user\\s+(?:stop|disable|mask)\\s+openclaw-gateway",
+    "pattern": "systemctl\\s+--user\\s+(?:stop|disable|mask|restart)\\s+openclaw-gateway",
     "action": "deny",
-    "reason": "🚫 GUARDRAIL: 禁止停止 Gateway 服务"
+    "reason": "🚫 GUARDRAIL: 禁止通过exec操作Gateway服务（停止/禁用/屏蔽/重启）"
   },
   {
     "pattern": "(?:rm|mv|cp|>)\\s+.*~?/\\.clawguard/",
