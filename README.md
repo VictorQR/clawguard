@@ -1,4 +1,4 @@
-# 🛡️ ClawGuard v0.3.2 — OpenClaw Runtime Security Plugin
+# 🛡️ ClawGuard v0.3.3 — OpenClaw Runtime Security Plugin
 
 > 轻量级 OpenClaw 安全插件，基于 `before_tool_call` 钩子实现运行时工具调用拦截。
 > 零外部依赖（仅 minimatch 用于路径匹配）、全本地决策、进程内运行。
@@ -49,6 +49,8 @@
 | 🟡 **流式报告** | Report 流式读取避免 OOM | v0.3.0 |
 | 🟡 **网络审批** | 未知域名弹窗审批 + 云元数据拦截 | v0.3.1 |
 | 🟡 **绕过外置** | 检测模式迁至 JSON，消除安全扫描误判 | v0.3.1 |
+| 🟢 **QQ审批详细化** | title/description/agentId/sessionKey 全字段推送，description 显示工作目录/原因 | v0.3.3 |
+| 🟢 **cwd 回退修复** | process.cwd() 直读系统目录，解决 qqbot hook cwd 缺失问题 | v0.3.3 |
 | 🟢 **只读工具放行** | web_fetch/search/memory 等 10 个工具免审批 | v0.3.2 |
 | 🟢 **Fallback 分级** | Policy 损坏时拒绝写/执行，允许只读自愈诊断 | v0.3.2 |
 | 🟢 **工具扩展** | sessions_list / sessions_history 加入只读白名单 | v0.3.2 |
@@ -579,6 +581,7 @@ npx tsx tests/integration.test.ts
 
 | 版本 | 日期 | 变更 |
 |:-----|:-----|:-----|
+| v0.3.3 | 2026-05-13 | QQ审批详细化（title/description/agentId/sessionKey）、cwd 回退修复（process.cwd() 解决 qqbot hook 空值）、RequireApprovalOptions 类型支持 sessionKey/agentId、4个 handler 函数签名统一加 ctx 参数 |
 | v0.3.2 | 2026-05-10 | 只读工具放行（10个工具免审批）、Fallback 分级（拒绝写/执行，允许只读自愈）、速率计数污染修复 |
 | v0.3.1 | 2026-05-09 | 绕过检测模式外置 + 网络审批修复 |
 | v0.3.0 | 2026-05-09 | 崩溃修复、安全加固、enforce 默认拒绝、路径写保护 |
@@ -594,4 +597,4 @@ MIT License — Copyright (c) 2026 VictorQR
 
 ---
 
-*ClawGuard v0.3.2 — 运行时安全，从源头开始。*
+*ClawGuard v0.3.3 — 运行时安全，从源头开始。*

@@ -77,19 +77,21 @@ export const DEFAULT_CONFIG: ClawGuardConfig = {
 
 // ── Before-Tool-Call Result ──────────────────────────────────
 
+export type RequireApprovalOptions = {
+  title: string;
+  description: string;
+  severity: "info" | "warning" | "critical";
+  timeoutMs?: number;
+  timeoutBehavior?: "deny" | "allow";
+  sessionKey?: string | null;
+  agentId?: string | null;
+  onResolution?: (decision: string) => Promise<void> | void;
+};
+
 export type BeforeToolCallResult =
   | undefined
   | { block: true; blockReason: string }
-  | {
-      requireApproval: {
-        title: string;
-        description: string;
-        severity: "info" | "warning" | "critical";
-        timeoutMs?: number;
-        timeoutBehavior?: "allow" | "deny";
-        onResolution?: (decision: string) => Promise<void> | void;
-      };
-    };
+  | { requireApproval: RequireApprovalOptions };
 
 // ── Policy Engine Types ──────────────────────────────────────
 

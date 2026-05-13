@@ -285,7 +285,7 @@ function initPlugin(api: any): void {
         return;
       }
       if (READ_TOOLS.has(event.toolName)) {
-        return handleFileRead(event); // Already permissive: only blocks denied_paths
+        return handleFileRead(event, ctx); // Already permissive: only blocks denied_paths
       }
 
       // Fallback mode — deny write/exec operations
@@ -349,22 +349,22 @@ function initPlugin(api: any): void {
 
       // Route dangerous tools through exec pipeline (process, sessions_spawn)
       if (DANGEROUS_TOOLS.has(event.toolName)) {
-        return handleExec(event);
+        return handleExec(event, ctx);
       }
 
       // Route to appropriate handler
       try {
         if (EXEC_TOOLS.has(event.toolName)) {
-          return handleExec(event);
+          return handleExec(event, ctx);
         }
         if (WRITE_TOOLS.has(event.toolName)) {
-          return handleFileWrite(event);
+          return handleFileWrite(event, ctx);
         }
         if (READ_TOOLS.has(event.toolName)) {
-          return handleFileRead(event);
+          return handleFileRead(event, ctx);
         }
         if (NETWORK_TOOLS.has(event.toolName)) {
-          return handleNetwork(event);
+          return handleNetwork(event, ctx);
         }
         return;
       } catch (err) {
@@ -522,7 +522,7 @@ export default {
 
 // ── Tool Handlers ────────────────────────────────────────────
 
-function handleExec(event: any): BeforeToolCallResult {
+function handleExec(event: any, ctx: any): BeforeToolCallResult {
   const { command, isScript } = extractCommand(event.params);
 
   if (!command) {
@@ -537,7 +537,9 @@ function handleExec(event: any): BeforeToolCallResult {
       return {
         requireApproval: {
           title: "🚫 编码绕过检测",
-          description: `命令: \`${command.slice(0, 200)}\`\n${bypassCheck.reason}`,
+          description: `📂 ${process.cwd()} | ⏱️ 30秒\n\`${command.slice(0, 200)}\`\n📌 ${bypassCheck.reason}`,
+          sessionKey: currentSessionId,
+          agentId: ctx?.agentId ?? null,
           severity: "critical",
           timeoutMs: 30000,
           timeoutBehavior: "deny",
@@ -604,7 +606,9 @@ function handleExec(event: any): BeforeToolCallResult {
       return {
         requireApproval: {
           title: "🖥 执行命令",
-          description: `\`${command.slice(0, 300)}\`\n${result.reason}`,
+          description: `📂 ${process.cwd()} | ⏱️ 3分钟\n\`${command.slice(0, 300)}\`\n📌 ${result.reason}`,
+          sessionKey: currentSessionId,
+          agentId: ctx?.agentId ?? null,
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
@@ -626,7 +630,7 @@ function handleExec(event: any): BeforeToolCallResult {
   }
 }
 
-function handleFileWrite(event: any): BeforeToolCallResult {
+function handleFileWrite(event: any, ctx: any): BeforeToolCallResult {
   const filePath = event.params?.path || event.params?.file || event.params?.filePath || "";
   if (typeof filePath !== "string" || !filePath) {
     return; // No path — allow
@@ -650,7 +654,9 @@ function handleFileWrite(event: any): BeforeToolCallResult {
       return {
         requireApproval: {
           title: "🔶 文件写入需审批",
-          description: `写入路径: ${result.normalizedPath}\n${result.reason}`,
+          description: `📂 ${process.cwd()} | ⏱️ 3分钟\n📁 ${result.normalizedPath}\n📌 ${result.reason}`,
+          sessionKey: currentSessionId,
+          agentId: ctx?.agentId ?? null,
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
@@ -667,7 +673,7 @@ function handleFileWrite(event: any): BeforeToolCallResult {
   }
 }
 
-function handleFileRead(event: any): BeforeToolCallResult {
+function handleFileRead(event: any, ctx: any): BeforeToolCallResult {
   const filePath = event.params?.path || event.params?.file || event.params?.filePath || "";
   if (typeof filePath !== "string" || !filePath) {
     return; // No path — allow
@@ -690,7 +696,7 @@ function handleFileRead(event: any): BeforeToolCallResult {
   }
 }
 
-function handleNetwork(event: any): BeforeToolCallResult {
+function handleNetwork(event: any, ctx: any): BeforeToolCallResult {
   // Handle web_fetch / http_request / fetch
   const url = event.params?.url || event.params?.uri || "";
   if (typeof url !== "string" || !url) {
@@ -716,7 +722,9 @@ function handleNetwork(event: any): BeforeToolCallResult {
       return {
         requireApproval: {
           title: "🔶 网络请求需审批",
-          description: `域名: ${result.domain}\n${result.reason}`,
+          description: `📂 ${process.cwd()} | ⏱️ 3分钟\n🌐 ${result.domain}\n📌 ${result.reason}`,
+          sessionKey: currentSessionId,
+          agentId: ctx?.agentId ?? null,
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
