@@ -579,4 +579,12 @@ npx tsx tests/integration.test.ts
 
 ---
 
+## 📝 Known Issues & Fixes
+
+| Bug ID | 问题 | 影响 | 修复 | 日期 |
+|--------|------|------|------|------|
+| BUG-2026-0516-01 | QQBot 审批格式回退（`isExecRequest` 判断错误） | ClawGuard ≥ v0.3.3 | 见 `docs/qqbot-approval-fix-2026-0516.md` | 2026-05-16 |
+
+---
+
 *ClawGuard — 运行时安全，从源头开始。*
