@@ -3,7 +3,7 @@
 > 轻量级 OpenClaw 安全插件，基于 `before_tool_call` 钩子实现运行时工具调用拦截。
 > 零外部依赖（仅 minimatch 用于路径匹配）、全本地决策、进程内运行。
 >
-> 📦 **ClawHub**: [`clawhub:@victorqr/clawguard`](https://clawhub.com/@victorqr/clawguard)
+> 📦 **ClawHub**: [`clawhub:@victorqr/clawguard`](https://clawhub.ai/plugins/@victorqr/clawguard)
 
 ---
 
