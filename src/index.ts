@@ -24,6 +24,7 @@ import type {
   BeforeToolCallResult,
   ClawGuardSession,
   AuditEntry,
+  PluginApprovalResolution,
 } from "./types.js";
 
 // ── Global State ─────────────────────────────────────────────
@@ -148,6 +149,15 @@ const DANGEROUS_TOOLS = new Set([
 import { createRequire } from "node:module";
 const _require = createRequire(import.meta.url);
 
+// Load plugin version from manifest (avoids hardcoding version strings)
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+const _pluginRoot = dirname(fileURLToPath(import.meta.url));
+const PLUGIN_VERSION: string = JSON.parse(
+  readFileSync(join(_pluginRoot, "..", "openclaw.plugin.json"), "utf-8")
+).version;
+
 // Shared init function for both paths
 function initPlugin(api: any): void {
   console.log("[ClawGuard] Plugin initializing...");
@@ -224,6 +234,12 @@ function initPlugin(api: any): void {
               return { block: true, blockReason: "🔒 群聊通道安全策略：仅允许白名单域名访问" };
             }
           }
+        }
+        // Allow readonly tools in group channels (before the exec/write/network return)
+        if (READONLY_TOOLS.has(event.toolName)) {
+          stats.recordCall(currentSessionId, event.toolName);
+          console.log(`[ClawGuard] ✅ ALLOW | 群聊只读工具自动放行 | tool="${event.toolName}"`);
+          return;
         }
         // For exec/write/network handled above, prevent fallthrough to normal handlers
         if (EXEC_TOOLS.has(event.toolName) || WRITE_TOOLS.has(event.toolName) || NETWORK_TOOLS.has(event.toolName)) {
@@ -440,6 +456,17 @@ function initPlugin(api: any): void {
     console.log(`  审批记忆:${approvalCount} | execs:${rateStats?.recentExecs ?? 0} | denies:${sessionStats?.denyCount ?? 0} | commands:${sessionStats?.commandCount ?? 0}`);
   });
 
+  // ── gateway_stop hook — emergency cleanup on process exit ───
+  // Fires from the gateway finalizer so even abnormal terminations
+  // (SIGTERM / crash) trigger cleanup before the process exits.
+  api.on("gateway_stop", async () => {
+    const count = sessionApprovals.size;
+    sessionCache.clear();
+    sessionApprovals.clear();
+    rateLimiter.reset(""); // reset default/orphaned state
+    console.log(`[ClawGuard] 🛑 Gateway shutdown — cleared ${count} approval entries and all session state`);
+  });
+
   // ── Health check service ───────────────────────────────────
   if (typeof api.registerService === "function") {
     api.registerService({ id: "clawguard-health", start: async () => {
@@ -463,7 +490,7 @@ function initPlugin(api: any): void {
     const sessionStats = stats.getSession(currentSessionId);
     return {
       plugin: "ClawGuard",
-      version: "0.1.0",
+      version: PLUGIN_VERSION,
       mode: policyEngine.mode,
       fallbackMode: policyEngine.isFallbackMode,
       integrity: policyEngine.integrityOk,
@@ -612,7 +639,7 @@ function handleExec(event: any, ctx: any): BeforeToolCallResult {
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
-          onResolution: async (decision: string) => {
+          onResolution: async (decision: PluginApprovalResolution) => {
             if (decision === "allow-always") {
               const { command: cmd } = extractCommand(event.params);
               if (cmd) {
@@ -660,7 +687,7 @@ function handleFileWrite(event: any, ctx: any): BeforeToolCallResult {
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
-          onResolution: async (decision: string) => {
+          onResolution: async (decision: PluginApprovalResolution) => {
             if (decision === "allow-always") {
               addApproval(currentSessionId, `file:${filePath}`);
               console.log(`[ClawGuard] 🔖 会话内记住审批: file:${filePath}`);
@@ -728,7 +755,7 @@ function handleNetwork(event: any, ctx: any): BeforeToolCallResult {
           severity: "warning",
           timeoutMs: 180000,
           timeoutBehavior: "deny",
-          onResolution: async (decision: string) => {
+          onResolution: async (decision: PluginApprovalResolution) => {
             if (decision === "allow-always") {
               addApproval(currentSessionId, `net:${url}`);
               console.log(`[ClawGuard] 🔖 会话内记住审批: net:${url}`);

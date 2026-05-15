@@ -77,6 +77,8 @@ export const DEFAULT_CONFIG: ClawGuardConfig = {
 
 // ── Before-Tool-Call Result ──────────────────────────────────
 
+export type PluginApprovalResolution = "allow-once" | "allow-always" | "deny" | "timeout" | "cancelled";
+
 export type RequireApprovalOptions = {
   title: string;
   description: string;
@@ -85,7 +87,7 @@ export type RequireApprovalOptions = {
   timeoutBehavior?: "deny" | "allow";
   sessionKey?: string | null;
   agentId?: string | null;
-  onResolution?: (decision: string) => Promise<void> | void;
+  onResolution?: (decision: PluginApprovalResolution) => Promise<void> | void;
 };
 
 export type BeforeToolCallResult =

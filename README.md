@@ -1,7 +1,9 @@
-# 🛡️ ClawGuard v0.3.3 — OpenClaw Runtime Security Plugin
+# 🛡️ ClawGuard — OpenClaw Runtime Security Plugin
 
 > 轻量级 OpenClaw 安全插件，基于 `before_tool_call` 钩子实现运行时工具调用拦截。
 > 零外部依赖（仅 minimatch 用于路径匹配）、全本地决策、进程内运行。
+>
+> 📦 **ClawHub**: [`clawhub:@victorqr/clawguard`](https://clawhub.com/@victorqr/clawguard)
 
 ---
 
@@ -577,24 +579,4 @@ npx tsx tests/integration.test.ts
 
 ---
 
-## 🔄 版本历史
-
-| 版本 | 日期 | 变更 |
-|:-----|:-----|:-----|
-| v0.3.3 | 2026-05-13 | QQ审批详细化（title/description/agentId/sessionKey）、cwd 回退修复（process.cwd() 解决 qqbot hook 空值）、RequireApprovalOptions 类型支持 sessionKey/agentId、4个 handler 函数签名统一加 ctx 参数 |
-| v0.3.2 | 2026-05-10 | 只读工具放行（10个工具免审批）、Fallback 分级（拒绝写/执行，允许只读自愈）、速率计数污染修复 |
-| v0.3.1 | 2026-05-09 | 绕过检测模式外置 + 网络审批修复 |
-| v0.3.0 | 2026-05-09 | 崩溃修复、安全加固、enforce 默认拒绝、路径写保护 |
-| v0.2.0 | 2026-05-09 | 速率限制（burst/global/escalation）、Guardrail 自防护（进程保护+policy SHA256）、通道感知策略（群聊/Cron）、统计周报 |
-| v0.1.1 | 2026-05-09 | 修复 HookRunner 调度（`api.on` 替代 `api.registerHook`）、会话审批记忆、会话追踪修复 |
-| v0.1.0 | 2026-05-08 | 初始发布：三段式规则引擎、编码绕过检测、文件/网络规则、Policy 热加载、审计日志 |
-
----
-
-## 📝 许可证
-
-MIT License — Copyright (c) 2026 VictorQR
-
----
-
-*ClawGuard v0.3.3 — 运行时安全，从源头开始。*
+*ClawGuard — 运行时安全，从源头开始。*
